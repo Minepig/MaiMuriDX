@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "maimuridx"
+version = "0.1.0"
+description = ""
+authors = ["Minepig <30530115+Minepig@users.noreply.github.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pygame = "^2.5.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
