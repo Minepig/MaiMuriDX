@@ -3,7 +3,7 @@ from math import degrees, pi, tanh
 from cmath import phase
 
 from core import CANVAS_SIZE, NOTE_SPEED, TOUCH_DURATION, DISTANCE_TAP, CANVAS_CENTER, DISTANCE_EDGE
-from core import JudgeResult, Pad, JUDGE_TPS
+from core import JudgeResult, Pad, JUDGE_TPS, DISTANCE_JUDGE_EFF
 from simai import SimaiNote, SimaiTap, SimaiHold, SimaiTouch
 from simai import SimaiTouchHold, SimaiTouchGroup, SimaiWifi, SimaiSlideChain
 from slides import SlideInfo, WifiInfo, SlideType
@@ -410,13 +410,19 @@ class NoteRenderer:
             distance = (note.judge_moment - note.moment) * NOTE_SPEED + DISTANCE_EDGE
             pos = note.pad.unitvec * distance + CANVAS_CENTER
             effect_renderer.add_effect(HitEffect(color, pos, note.judge_moment))
+            if note.judge == JudgeResult.Bad:
+                effect_renderer.add_effect(SimpleJudgeEffect(note.judge_moment, note.pad))
         elif isinstance(note, SimaiHold):
             color = [255, 255, 0] if note.judge == JudgeResult.Critical else [0, 255, 0]
             pos = note.pad.unitvec * DISTANCE_EDGE + CANVAS_CENTER
             effect_renderer.add_effect(HitEffect(color, pos, note.end_moment))
+            if note.judge == JudgeResult.Bad:
+                effect_renderer.add_effect(SimpleJudgeEffect(note.judge_moment, note.pad))
         elif isinstance(note, SimaiTouch):
             color = [255, 255, 0] if note.judge == JudgeResult.Critical else [0, 255, 0]
             effect_renderer.add_effect(HitEffect(color, note.pad.vec + CANVAS_CENTER, note.judge_moment))
+            if note.judge == JudgeResult.Bad:
+                effect_renderer.add_effect(SimpleJudgeEffect(note.judge_moment, note.pad))
         elif isinstance(note, SimaiTouchGroup):
             for i, touch in enumerate(note.children):
                 if note.effect_generated[i]:
@@ -425,10 +431,14 @@ class NoteRenderer:
                     continue
                 color = [255, 255, 0] if touch.judge == JudgeResult.Critical else [0, 255, 0]
                 effect_renderer.add_effect(HitEffect(color, touch.pad.vec + CANVAS_CENTER, touch.judge_moment))
+                if touch.judge == JudgeResult.Bad:
+                    effect_renderer.add_effect(SimpleJudgeEffect(note.judge_moment, touch.pad))
                 note.effect_generated[i] = True
         elif isinstance(note, SimaiTouchHold):
             color = [255, 255, 0] if note.judge == JudgeResult.Critical else [0, 255, 0]
             effect_renderer.add_effect(HitEffect(color, note.pad.vec + CANVAS_CENTER, note.end_moment))
+            if note.judge == JudgeResult.Bad:
+                effect_renderer.add_effect(SimpleJudgeEffect(note.judge_moment, note.pad))
         elif isinstance(note, SimaiSlideChain):
             if note.judge == JudgeResult.Critical:
                 return
@@ -473,6 +483,47 @@ class HitEffect(BaseEffect):
         self.color.a = 255 if delta < (JUDGE_TPS / 6) else round(255 * (2 - delta * 6 / JUDGE_TPS))
 
         pg.draw.circle(surface, self.color, self.pos, r, 5)
+
+
+class SimpleJudgeEffect(BaseEffect):
+    good_image: pg.Surface = None
+    good_images_by_pad = {}
+
+    @classmethod
+    def load_images(cls, image: pg.Surface):
+        cls.good_image = image
+        cls.good_images_by_pad = {}
+        for i in range(8):
+            pic = pg.transform.rotate(image, 22.5 - 45 * i)
+            cls.good_images_by_pad[Pad(i)] = pic
+            cls.good_images_by_pad[Pad(i | 8)] = pic
+            pic = pg.transform.rotate(image, 45 - 45 * i)
+            cls.good_images_by_pad[Pad(i | 16)] = pic
+            cls.good_images_by_pad[Pad(i | 24)] = pic
+        cls.good_images_by_pad[Pad.C] = image
+
+    def __init__(self, moment: float, pad: Pad):
+        super().__init__(moment)
+        self.pad = pad
+        self.image = self.good_images_by_pad[pad].copy()
+        pos = pad.vec - pad.unitvec * DISTANCE_JUDGE_EFF + CANVAS_CENTER
+        self.rect = self.image.get_rect()
+        self.rect.center = pos.real, pos.imag
+
+    def update_and_draw(self, surface: pg.Surface, now: float):
+        delta = now - self.moment
+        if delta > (JUDGE_TPS / 2):
+            self.alive = False
+            return
+
+        if delta < (JUDGE_TPS / 8):
+            a = 255 * (delta * 8 / JUDGE_TPS)
+        elif delta > (JUDGE_TPS / 4):
+            a = 255 * (2 - delta * 4 / JUDGE_TPS)
+        else:
+            a = 255
+        self.image.set_alpha(a)
+        surface.blit(self.image, self.rect)
 
 
 class SlideJudgeEffect(BaseEffect):
@@ -554,11 +605,12 @@ class SlideWifiEffect(SlideJudgeEffect):
 
 
 class PressEffect(BaseEffect):
-    def __init__(self, moment: float, pos: complex, radius: float, is_slide: bool):
+    def __init__(self, moment: float, pos: complex, radius: float, is_slide: bool, on_multitouch: bool):
         super().__init__(moment)
         self.pos = pos
         self.radius = radius
         self.is_slide = is_slide
+        self.on_multitouch = on_multitouch
 
     def update_and_draw(self, surface: pg.Surface, now: float):
         delta = now - self.moment
@@ -567,7 +619,8 @@ class PressEffect(BaseEffect):
             return
 
         t = max(min(delta * 5 / JUDGE_TPS, 1), 0)
-        color = [255, 255, 255, (1 - t) * 255]
+        color = [224, 108, 117, 255] if self.on_multitouch else [255, 255, 255, 255]
+        color[3] = (1 - t) * 255
         pos = self.pos + CANVAS_CENTER
         r = self.radius * (1 - 0.5 * t) if self.is_slide else self.radius
 

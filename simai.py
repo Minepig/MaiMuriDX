@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterable
 from itertools import accumulate
@@ -7,6 +8,9 @@ from core import Pad, JudgeResult, \
                  SLIDE_CRITICAL, SLIDE_AVAILABLE, SLIDE_LEADING
 from slides import SlideInfo, WifiInfo
 from util import get_covering_circle
+
+if TYPE_CHECKING:
+    from action import Action
 
 class SimaiNote(metaclass=ABCMeta):
     def __init__(self, cursor: tuple[int, int, str], moment: float):
@@ -20,24 +24,27 @@ class SimaiNote(metaclass=ABCMeta):
         self.moment: float = moment
         self.judge: JudgeResult = JudgeResult.Not_Yet
         self.judge_moment: float = -1
+        self.judge_action: "Action | None" = None
 
     @abstractmethod
-    def update(self, now: float, pad_states: dict[Pad, bool]) -> None:
+    def update(self, now: float, pad_states: "dict[Pad, Action | None]", pad_up_this_tick: "dict[Pad, Action | None]") -> None:
         """
         Update note routine.
 
         @param now: current music timestamp in ticks
-        @param pad_states: current pad states (pressed or not)
+        @param pad_states: current pad states (pressed or not) and its cause
+        @param pad_up_this_tick: not None if a touchpad has ON -> OFF in this tick
         """
         raise NotImplementedError
 
     @abstractmethod
-    def on_pad_down(self, now: float, pad: "Pad") -> bool:
+    def on_pad_down(self, now: float, pad: "Pad", action: "Action | None") -> bool:
         """
         Call when a touchpad is just pressed down.
 
         @param now: current music timestamp in ticks
         @param pad: the touchpad pressed
+        @param action: the action causing this press
         @return: True if the pad down event is consumed
         """
         raise NotImplementedError
@@ -72,7 +79,7 @@ class SimaiSimpleNote(SimaiNote):
     def _get_critical_delta(self):
         raise NotImplementedError
 
-    def update(self, now: float, pad_states: dict[Pad, bool]):
+    def update(self, now: float, pad_states: "dict[Pad, Action | None]", pad_up_this_tick: "dict[Pad, Action | None]"):
         if self.judge != JudgeResult.Not_Yet:
             return
         if now - self.moment > self._get_critical_delta():
@@ -81,7 +88,7 @@ class SimaiSimpleNote(SimaiNote):
             self.judge_moment = now
             # print("too late", self.moment)
 
-    def on_pad_down(self, now: float, pad: Pad) -> bool:
+    def on_pad_down(self, now: float, pad: Pad, action: "Action | None") -> bool:
         if self.judge != JudgeResult.Not_Yet:
             return False
         delta = now - self.moment
@@ -90,6 +97,7 @@ class SimaiSimpleNote(SimaiNote):
         if pad != self.pad:
             return False
         self.judge_moment = now
+        self.judge_action = action
         self.judge = JudgeResult.Critical if (abs(delta) <= self._get_critical_delta()) else JudgeResult.Bad
         return True
 
@@ -201,20 +209,20 @@ class SimaiTouchGroup(SimaiNote):
     def set_on_slide(self, on_slide: bool):
         self.on_slide = on_slide
 
-    def update(self, now: float, pad_states: dict[Pad, bool]):
+    def update(self, now: float, pad_states: "dict[Pad, Action | None]", pad_up_this_tick: "dict[Pad, Action | None]"):
         n = 0
         for touch in self.children:
-            touch.update(now, pad_states)
+            touch.update(now, pad_states, pad_up_this_tick)
             if touch.judge != JudgeResult.Not_Yet:
                 n += 1
         if n >= self.threshold:
             # more than 50% is judged -> judge remaining
             for touch in self.children:
-                touch.on_pad_down(now, touch.pad)
+                touch.on_pad_down(now, touch.pad, None)
 
-    def on_pad_down(self, now: float, pad: Pad) -> bool:
+    def on_pad_down(self, now: float, pad: Pad, action: "Action") -> bool:
         for touch in self.children:
-            if touch.on_pad_down(now, pad):
+            if touch.on_pad_down(now, pad, action):
                 return True
         return False
 
@@ -305,24 +313,33 @@ class SimaiSlideChain(SimaiNote):
         self.total_area_num = len(self.judge_sequence)
 
         # variable fields
+        self.before_slide = False
+        self.after_slide = False  # indicating standard single-stroke slide
         self.cur_area_idx = 0
         self.cur_segment_idx = 0
         self.pressing: Pad | None = None
+        self.area_judge_actions: "list[Action | None]" = [None] * self.total_area_num
 
-    def on_pad_down(self, now: float, pad: "Pad") -> bool:
+    def set_before_slide(self, before_slide: bool):
+        self.before_slide = before_slide
+
+    def set_after_slide(self, after_slide: bool):
+        self.after_slide = after_slide
+
+    def on_pad_down(self, now: float, pad: "Pad", action: "Action | None") -> bool:
         return False  # slide do not check pad down event
 
     def finish(self, now: float) -> bool:
         return now > self.end_moment + SLIDE_AVAILABLE or self.judge == JudgeResult.Bad
 
-    def update(self, now: float, pad_states: dict[Pad, bool]):
+    def update(self, now: float, pad_states: "dict[Pad, Action | None]", pad_up_this_tick: "dict[Pad, Action | None]"):
         if self.judge != JudgeResult.Not_Yet:
             return
         if now < self.available_moment:
             return
 
         while self.cur_area_idx < self.total_area_num:
-            if not self._progress_slide_once(pad_states):
+            if not self._progress_slide_once(pad_states, pad_up_this_tick):
                 break
 
         if self.cur_area_idx >= self.total_area_num:
@@ -368,15 +385,17 @@ class SimaiSlideChain(SimaiNote):
         # P.S. 1-3-5 is not identical to 1V35, since 1-3-5 is not a V-shape slide, and its length is more than 3
         #      so A2/B2, A4/B4 are both skippable
 
-    def _progress_slide_once(self, pad_states: dict[Pad, bool]) -> bool:
+    def _progress_slide_once(self, pad_states: "dict[Pad, Action | None]", pad_up_this_tick: "dict[Pad, Action | None]") -> bool:
         if self.pressing is None:
             # pad down
             for pad in self.judge_sequence[self.cur_area_idx]:
-                if pad_states[pad]:
+                if pad_states[pad] is not None:
                     self.pressing = pad
+                    self.area_judge_actions[self.cur_area_idx] = pad_states[pad] or pad_up_this_tick[pad]
                     if self.cur_area_idx >= self.total_area_num - 1:
                         # last area
                         self.cur_area_idx += 1
+                        self.judge_action = pad_states[pad]
                     if self.partition[self.cur_area_idx]:
                         # last area of a segment
                         self.cur_segment_idx += 1
@@ -384,7 +403,7 @@ class SimaiSlideChain(SimaiNote):
 
         else:
             # pad up
-            if not pad_states[self.pressing]:
+            if pad_states[self.pressing] is None:
                 self.pressing = None
                 self.cur_area_idx += 1
                 return True
@@ -392,12 +411,14 @@ class SimaiSlideChain(SimaiNote):
         if self._can_skip_area():
             # try to skip current area
             for pad in self.judge_sequence[self.cur_area_idx + 1]:
-                if pad_states[pad]:
+                if pad_states[pad] is not None or pad_up_this_tick[pad] is not None:
                     self.pressing = pad
                     self.cur_area_idx += 1
+                    self.area_judge_actions[self.cur_area_idx] = pad_states[pad] or pad_up_this_tick[pad]
                     if self.cur_area_idx >= self.total_area_num - 1:
                         # last area
                         self.cur_area_idx += 1
+                        self.judge_action = pad_states[pad]
                     if self.partition[self.cur_area_idx]:
                         # last area of a segment
                         self.cur_segment_idx += 1
@@ -435,17 +456,22 @@ class SimaiWifi(SimaiNote):
         self.total_area_num = len(self.info.tri_judge_sequence[1])      # all 3 lanes is length 4
 
         # variable fields
+        self.after_slide = False
         self.cur_area_idxes = [0, 0, 0]
         self.pressing: list[Pad | None] = [None, None, None]
-        self.finished = [False, False, False]
+        self.lane_finished = [False, False, False]
+        self.area_judge_actions: "list[list[Action | None]]" = [[None] * self.total_area_num for _ in range(3)]
 
-    def on_pad_down(self, now: float, pad: "Pad") -> bool:
+    def set_after_slide(self, after_slide: bool):
+        self.after_slide = after_slide
+
+    def on_pad_down(self, now: float, pad: "Pad", action: "Action | None") -> bool:
         return False
 
     def finish(self, now: float) -> bool:
         return now > self.end_moment + SLIDE_AVAILABLE or self.judge == JudgeResult.Bad
 
-    def update(self, now: float, pad_states: dict[Pad, bool]):
+    def update(self, now: float, pad_states: "dict[Pad, Action | None]", pad_up_this_tick: "dict[Pad, Action | None]"):
         if self.judge != JudgeResult.Not_Yet:
             return
         if now < self.available_moment:
@@ -453,10 +479,10 @@ class SimaiWifi(SimaiNote):
 
         for lane in range(3):
             while self.cur_area_idxes[lane] < self.total_area_num:
-                if not self._progress_lane_once(lane, pad_states):
+                if not self._progress_lane_once(lane, pad_states, pad_up_this_tick):
                     break
 
-        if all(self.finished):
+        if all(self.lane_finished):
             self.judge_moment = now
             delta = now - self.critical_moment
             self.judge = JudgeResult.Critical if (abs(delta) <= self.critical_delta) else JudgeResult.Bad
@@ -467,30 +493,34 @@ class SimaiWifi(SimaiNote):
             self.judge = JudgeResult.Bad
             self.judge_moment = now
 
-    def _progress_lane_once(self, lane: int, pad_states: dict[Pad, bool]) -> bool:
+    def _progress_lane_once(self, lane: int, pad_states: "dict[Pad, Action | None]", pad_up_this_tick: "dict[Pad, Action | None]") -> bool:
         if self.pressing[lane] is None:
             for pad in self.info.tri_judge_sequence[lane][self.cur_area_idxes[lane]]:
-                if pad_states[pad]:
+                if pad_states[pad] is not None:
                     self.pressing[lane] = pad
+                    self.area_judge_actions[lane][self.cur_area_idxes[lane]] = pad_states[pad]
                     if self.cur_area_idxes[lane] >= self.total_area_num - 1:
                         self.cur_area_idxes[lane] += 1
-                        self.finished[lane] = True
+                        self.lane_finished[lane] = True
+                        self.judge_action = pad_states[pad]     # 最后完成的lane会覆写掉这个field
                     return True
 
         else:
-            if not pad_states[self.pressing[lane]]:
+            if pad_states[self.pressing[lane]] is None:
                 self.pressing[lane] = None
                 self.cur_area_idxes[lane] += 1
                 return True
 
         if self.cur_area_idxes[lane] < self.total_area_num - 1:
             for pad in self.info.tri_judge_sequence[lane][self.cur_area_idxes[lane] + 1]:
-                if pad_states[pad]:
+                if pad_states[pad] is not None or pad_up_this_tick[pad] is not None:
                     self.pressing[lane] = pad
                     self.cur_area_idxes[lane] += 1
+                    self.area_judge_actions[lane][self.cur_area_idxes[lane]] = pad_states[pad]
                     if self.cur_area_idxes[lane] >= self.total_area_num - 1:
                         self.cur_area_idxes[lane] += 1
-                        self.finished[lane] = True
+                        self.lane_finished[lane] = True
+                        self.judge_action = pad_states[pad]
                     return True
 
         return False

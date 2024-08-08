@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 class Action(metaclass=ABCMeta):
-    def __init__(self, source: "SimaiNote", moment: float):
+    def __init__(self, source: "SimaiNote", moment: float, two_hands: bool):
         """
         Base class of all hand actions.
 
@@ -19,6 +19,7 @@ class Action(metaclass=ABCMeta):
         """
         self.source = source
         self.moment = moment
+        self.require_two_hands = two_hands
 
     @abstractmethod
     def update(self, now: float) -> None | tuple[complex, float]:
@@ -39,6 +40,9 @@ class Action(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
+    def can_merge(self) -> bool:
+        return False
+
 
 class ActionPress(Action):
     def __init__(
@@ -55,11 +59,10 @@ class ActionPress(Action):
         @param radius: the radius of the hand in pixels
         @param tailless: no delay release
         """
-        super().__init__(source, moment)
+        super().__init__(source, moment, radius > HAND_RADIUS_MAX)
         self.position = position
         self.duration = duration
         self.radius = radius
-        self.require_two_hands = radius > HAND_RADIUS_MAX
         self.end_moment = moment + duration
         if not tailless:
             self.end_moment += RELEASE_DELAY
@@ -77,7 +80,7 @@ class ActionPress(Action):
 class ActionSlide(Action):
     def __init__(
             self, source: "SimaiNote", moment: float, duration: float,
-            path: "SlidePath", radius: float, tailless: bool = False
+            path: "SlidePath", radius: float, tailless: bool = False, is_wifi = False
     ):
         """
         Slide actions, press a position and move along a path in some time interval.
@@ -89,13 +92,14 @@ class ActionSlide(Action):
         @param radius: the radius of the hand in pixels
         @param tailless: no delay release
         """
-        super().__init__(source, moment)
+        super().__init__(source, moment, False)
         self.duration = duration
         self.radius = radius
         self.path = path
         self.end_moment = moment + duration
         if not tailless:
             self.end_moment += RELEASE_DELAY
+        self.is_wifi = is_wifi
 
     def update(self, now: float) -> None | tuple[complex, float]:
         if self.moment <= now < self.end_moment:
@@ -107,6 +111,9 @@ class ActionSlide(Action):
 
     def finish(self, now: float) -> bool:
         return now >= self.end_moment
+
+    def can_merge(self) -> bool:
+        return not self.is_wifi
 
 
 class ActionExtraPadDown(Action):
@@ -123,7 +130,7 @@ class ActionExtraPadDown(Action):
         @param moment: the music timestamp when action is performed (press down), in ticks
         @param pad: the pad which should be pressed
         """
-        super().__init__(source, moment + delay)
+        super().__init__(source, moment + delay, False)
         self.pad = pad
 
     def update(self, now: float) -> None | tuple[complex, float]:

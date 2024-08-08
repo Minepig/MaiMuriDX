@@ -270,14 +270,14 @@ class SimaiParser:
                 result = []
             else:
                 # separate the slide head
-                result = [SimaiTap(cursor, now, pos)]
+                result = [SimaiTap((cursor[0], cursor[1], note_str[0] + "_"), now, pos)]
             # slide
             if "*" in note_str:
                 # same head slide
                 first, *remaining = note_str.split("*")
-                result.extend(cls._parse_slide_note(cursor, first, now, bpm))
+                result.extend(cls._parse_slide_note((cursor[0], cursor[1], first), first, now, bpm))
                 for s in remaining:
-                    result.extend(cls._parse_slide_note(cursor, note_str[0] + s, now, bpm))
+                    result.extend(cls._parse_slide_note((cursor[0], cursor[1], "*" + note_str[0] + s), note_str[0] + s, now, bpm))
             else:
                 result.extend(cls._parse_slide_note(cursor, note_str, now, bpm))
             return result
@@ -466,6 +466,15 @@ class SimaiParser:
                 if all(touch.on_slide for touch in note.children):
                     note.set_on_slide(True)
 
+            # standard single-stroke slide
+            if isinstance(note, SimaiSlideChain):
+                for note2 in chart:
+                    if isinstance(note2, SimaiSlideChain | SimaiWifi):
+                        if note.end == note2.start \
+                                and abs(note.end_moment - note2.shoot_moment) < TAP_ON_SLIDE_THRESHOLD:
+                            note2.set_after_slide(True)
+                            note.set_before_slide(True)
+
     @classmethod
     def _check_touch_on_slide(cls, touch: SimaiTouch, slide: SimaiSlideChain) -> bool:
         # check first pad (something like tap-slide pair)
@@ -505,48 +514,50 @@ class NoteActionConverter:
                 result.append(ActionPress(note, note.moment, 0, note.pad.vec, HAND_RADIUS_NORMAL))
                 continue
 
-            if isinstance(note, SimaiTouch):
+            elif isinstance(note, SimaiTouch):
                 if note.on_slide:
                     continue
                 result.append(ActionPress(note, note.moment, 0, note.pad.vec, HAND_RADIUS_NORMAL))
                 continue
 
-            if isinstance(note, SimaiTouchGroup):
+            elif isinstance(note, SimaiTouchGroup):
                 if note.on_slide:
                     continue
                 result.append(ActionPress(note, note.moment, 0, note.center, note.radius))
                 continue
 
-            if isinstance(note, SimaiHold | SimaiTouchHold):
+            elif isinstance(note, SimaiHold | SimaiTouchHold):
                 result.append(ActionPress(note, note.moment, note.duration, note.pad.vec, HAND_RADIUS_NORMAL))
                 continue
 
-            if isinstance(note, SimaiSlideChain):
+            elif isinstance(note, SimaiSlideChain):
                 radius = HAND_RADIUS_NORMAL
-                result.append(ActionExtraPadDown(note, note.shoot_moment, Pad(note.start % 8), EXTRA_PADDOWN_DELAY))
+                # 生成导致外无的额外动作
+                if not note.after_slide:
+                    first_area_duration = note.segment_infos[0].pad_enter_time[0].t * note.durations[0]
+                    delay = min(EXTRA_PADDOWN_DELAY, first_area_duration)
+                    result.append(ActionExtraPadDown(note, note.shoot_moment, Pad(note.start % 8), delay))
+
+                # 对于SlideChain中非最后一段的所有slide，都适用于一笔画情况，即结尾不停留
                 pack = list(zip(note.segment_infos, note.durations, note.segment_shoot_moments))
                 for info, duration, moment in pack[:-1]:
-                    result.append(ActionSlide(note, moment, duration, info.real_path, radius, True))
+                    result.append(ActionSlide(note, moment, duration, info.real_path, radius, True, False))
+                # 最后一段slide，非一笔画的情况下需要停留一段时间
                 info, duration, moment = pack[-1]
-                # 检查一笔画
-                for note2 in chart:
-                    if isinstance(note2, SimaiSlideChain) or isinstance(note2, SimaiWifi):
-                        if note2.start == note.end \
-                                and abs(note2.shoot_moment - note.end_moment) < TAP_ON_SLIDE_THRESHOLD:
-                            # 本条星星结尾处有一条星星恰好启动
-                            result.append(ActionSlide(note, moment, duration, info.real_path, radius, True))
-                            break
-                else:
-                    # 没有检查到一笔画，则在星星的结尾处停留一小段时间
-                    result.append(ActionSlide(note, moment, duration, info.real_path, radius, False))
+                result.append(ActionSlide(note, moment, duration, info.real_path, radius, note.before_slide, False))
                 continue
 
-            if isinstance(note, SimaiWifi):
-                result.append(ActionExtraPadDown(note, note.shoot_moment, Pad(note.start % 8), EXTRA_PADDOWN_DELAY))
+            elif isinstance(note, SimaiWifi):
+                # 生成导致外无的额外动作
+                if not note.after_slide:
+                    first_area_duration = note.info.pad_enter_time[0].t * note.duration
+                    delay = min(EXTRA_PADDOWN_DELAY, first_area_duration)
+                    result.append(ActionExtraPadDown(note, note.shoot_moment, Pad(note.start % 8), delay))
+
                 result.append(ActionSlide(note, note.shoot_moment, note.duration,
-                                          note.info.di_real_path[0], HAND_RADIUS_WIFI))
+                                          note.info.di_real_path[0], HAND_RADIUS_WIFI, True, True))
                 result.append(ActionSlide(note, note.shoot_moment, note.duration,
-                                          note.info.di_real_path[1], HAND_RADIUS_WIFI))
+                                          note.info.di_real_path[1], HAND_RADIUS_WIFI, True, True))
                 continue
 
             # should not reach here

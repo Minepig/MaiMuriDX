@@ -6,7 +6,7 @@ from action import Action, ActionSlide
 from core import CANVAS_CENTER, CANVAS_SIZE, JudgeResult, Pad, JUDGE_TPS, RENDER_FPS
 from judge import JudgeManager
 from majparse import NoteActionConverter, SimaiParser
-from render import EffectRenderer, NoteRenderer, PressEffect, SlideJudgeEffect
+from render import EffectRenderer, NoteRenderer, PressEffect, SlideJudgeEffect, SimpleJudgeEffect
 from simai import SimaiNote, SimaiTouchGroup
 from slides import init as init_slides
 init_slides()
@@ -66,6 +66,9 @@ class GameRenderer:
             pg.image.load("images/judge/slidecircle_r.png").convert_alpha(),
             pg.image.load("images/judge/wifi_u.png").convert_alpha(),
             pg.image.load("images/judge/wifi_d.png").convert_alpha(),
+        )
+        SimpleJudgeEffect.load_images(
+            pg.image.load("images/judge/simple.png").convert_alpha(),
         )
 
     def clear_canvas(self):
@@ -144,6 +147,11 @@ class Game:
         actions = NoteActionConverter.generate_action(chart)
         self.judge_manager.load_chart(chart, actions)
 
+    def run_no_render(self):
+        total = len(self.judge_manager.note_sequence)
+        while self.judge_manager.note_pointer < total or len(self.judge_manager.active_notes) > 0:
+            self.judge_manager.tick(1)
+
     def run(self):
         self.last_frame_ms = self.timer_ms = pg.time.get_ticks()
         while self.running:
@@ -160,25 +168,21 @@ class Game:
                     pass
 
                 if not self.pause:
-                    self.judge_manager.tick(elapsed_ticks)
+                    this_frame_touch_points, hand_count, finished_notes = self.judge_manager.tick(elapsed_ticks)
 
-                    for note in self.judge_manager.finished_notes:
+                    for note in finished_notes:
                         self.renderer.note_renderer.generate_judge_effect(note, self.renderer.effect_renderer)
                         # if note.judge == JudgeResult.Bad:
                         #     self.pause = True
                         #     pg.mixer.music.pause()
 
-                    self.judge_manager.clear_finished_notes()
                     for note in self.judge_manager.active_notes:
                         if isinstance(note, SimaiTouchGroup):
                             self.renderer.note_renderer.generate_judge_effect(note, self.renderer.effect_renderer)
 
-                    for action in self.judge_manager.active_actions:
-                        circle = action.update(self.judge_manager.timer)
-                        if circle is not None:
-                            c, r = circle
-                            flag = isinstance(action, ActionSlide)
-                            self.renderer.action_renderer.add_effect(PressEffect(self.judge_manager.timer, c, r, flag))
+                    for c, r, action in this_frame_touch_points:
+                        flag = isinstance(action, ActionSlide)
+                        self.renderer.action_renderer.add_effect(PressEffect(self.judge_manager.timer, c, r, flag, hand_count > 2))
 
                 if timer_new - self.last_frame_ms >= 1000 / RENDER_FPS:
                     self.renderer.clear_canvas()
@@ -190,7 +194,8 @@ class Game:
                     self.renderer.render_all_layers()
                     self.last_frame_ms = timer_new
             except Exception as e:
-                print_exc()
+                # print_exc()
+                raise e
 
 
 
@@ -225,5 +230,8 @@ if __name__ == "__main__":
 
     game = Game()
     game.load_chart(SimaiParser.parse_simai_chart(chart_str, first))
-    game.run()
+    if input("是否关闭渲染？(不输入任何内容即为否)"):
+        game.run_no_render()
+    else:
+        game.run()
 
