@@ -1,9 +1,10 @@
 from typing import NamedTuple
 from collections.abc import Sequence, Iterable
 
-from core import JUDGE_TPS, Pad, DISTANCE_MERGE_SLIDE, JudgeResult
+from core import JUDGE_TPF, JUDGE_TPS, DISTANCE_MERGE_SLIDE, JudgeResult, Pad
+from core import OVERLAY_THRESHOLD, TOUCH_ON_SLIDE_THRESHOLD, COLLIDE_THRESHOLD, COLLIDE_TAIL_THRESHOLD, TAP_ON_SLIDE_THRESHOLD
 from action import ActionExtraPadDown
-from simai import SimaiNote, SimaiSlideChain, SimaiWifi
+from simai import SimaiNote, SimaiSlideChain, SimaiWifi, SimaiTap, SimaiHold, SimaiTouch, SimaiTouchHold, SimaiTouchGroup
 from action import Action
 
 
@@ -32,6 +33,142 @@ class TouchPoint(NamedTuple):
     source: "Action"
 
 
+class StaticMuriChecker:
+    @staticmethod
+    def _flatten_touch_group(note_sequence: Sequence[SimaiNote]):
+        for note in note_sequence:
+            if isinstance(note, SimaiTouchGroup):
+                yield from note.children
+            else:
+                yield note
+
+    @staticmethod
+    def _overlap_record(note: SimaiNote, note2: SimaiNote) -> dict:
+        return {
+            "type": "Overlap",
+            "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
+            "cause": {"line": note2.cursor[0], "col": note2.cursor[1], "note": note2.cursor[2]},
+        }
+
+    @staticmethod
+    def _tap_on_slide_record(note: SimaiNote, slide: SimaiNote, delta: float) -> dict:
+        return {
+            "type": "TapOnSlide",
+            "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
+            "cause": {"line": slide.cursor[0], "col": slide.cursor[1], "note": slide.cursor[2]},
+            "delta": delta,
+        }
+
+    @staticmethod
+    def _slide_head_tap_record(note: SimaiNote, slide: SimaiNote, delta: float) -> dict:
+        return {
+            "type": "SlideHeadTap",
+            "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
+            "cause": {"line": slide.cursor[0], "col": slide.cursor[1], "note": slide.cursor[2]},
+            "delta": delta,
+        }
+
+    @classmethod
+    def check(cls, note_sequence: Sequence[SimaiNote]):
+        muri_records = []
+        for i, note in enumerate(cls._flatten_touch_group(note_sequence)):
+            for j, note2 in enumerate(cls._flatten_touch_group(note_sequence)):
+                if note is note2:
+                    continue
+
+                if isinstance(note, SimaiSlideChain):
+                    if isinstance(note2, SimaiTap | SimaiHold):
+                        if note2.moment < note.shoot_moment or note2.moment > note.end_moment + COLLIDE_THRESHOLD:
+                            continue  # 简单剪个枝，这里假设 COLLIDE_THRESHOLD > COLLIDE_TAIL_THRESHOLD
+
+                        # TODO
+                        # 这里有一个问题，SlideInfo里记录的进入时刻并不满足顺序关系，因为会有OR判定区之类的东西
+                        # 1pp6 和 wifi 受到的影响最大，任何含1-3形状的也有一些影响
+                        # 摆烂了，我选择只检查 进入A区±200ms 的撞尾
+
+                        # 首先查第一个区的外无
+                        if note2.pad == Pad(note.start % 8) and \
+                                TAP_ON_SLIDE_THRESHOLD <= note2.moment - note.shoot_moment <= COLLIDE_THRESHOLD:
+                            muri_records.append(cls._slide_head_tap_record(note2, note, note2.moment - note.shoot_moment))
+                        # 逐段检查，逐个区检查
+                        for info, duration, moment in zip(note.segment_infos, note.durations,
+                                                          note.segment_shoot_moments):
+                            for p, t in info.pad_enter_time:
+                                if p != note2.pad:
+                                    continue
+
+                                enter_moment = moment + t * duration
+                                # 区间左端点取进入当前区-200ms，但不要早于星星启动
+                                start = max(enter_moment - COLLIDE_THRESHOLD, note.shoot_moment + TAP_ON_SLIDE_THRESHOLD)
+                                # 区间右端点取两者更晚：进入下一个区 / 进入当前区+200ms
+                                # 因为我不能确定“下一个区”，所以只取 进入当前区+200ms
+                                end = enter_moment + COLLIDE_THRESHOLD
+                                if start <= note2.moment <= end:
+                                    muri_records.append(cls._tap_on_slide_record(note2, note, note2.moment - enter_moment))
+                        # 对于最后一个区，区间尾额外延长到星星结束+50ms
+                        if note2.pad == Pad(note.end % 8) and \
+                                note.critical_moment + COLLIDE_THRESHOLD < note2.moment <= note.end_moment + COLLIDE_TAIL_THRESHOLD:
+                            muri_records.append(cls._tap_on_slide_record(note2, note, note2.moment - note.critical_moment))
+
+                    # 摆烂了，不查slide和touch叠键了，交给动态检测
+                    # elif isinstance(note2, SimaiTouch | SimaiTouchHold):
+                    #     for idx, (pad, moment) in enumerate(enter_moments[:-1]):
+                    #         if pad != note2.pad:
+                    #             continue
+                    #         if (moment + TOUCH_ON_SLIDE_THRESHOLD
+                    #                 <= note2.moment <= enter_moments[idx+1][1] - TOUCH_ON_SLIDE_THRESHOLD):
+                    #             muri_records.append(cls._overlap_record(note2, note))
+
+                elif isinstance(note, SimaiWifi):
+                    # 偷个懒，wifi其实只需要查头尾
+                    if isinstance(note2, SimaiTap | SimaiHold):
+                        if note.start % 8 == note2.idx % 8 and \
+                                TAP_ON_SLIDE_THRESHOLD <= note2.moment - note.shoot_moment <= COLLIDE_THRESHOLD:
+                            muri_records.append(cls._slide_head_tap_record(note2, note, note2.moment - note.shoot_moment))
+                        elif note2.idx % 8 in (note.end % 8, (note.end + 1) % 8, (note.end - 1) % 8):
+                            start = note.critical_moment - COLLIDE_THRESHOLD
+                            end = max(note.critical_moment + COLLIDE_THRESHOLD, note.end_moment + COLLIDE_TAIL_THRESHOLD)
+                            if start <= note2.moment <= end:
+                                muri_records.append(cls._tap_on_slide_record(note2, note, note2.moment - note.critical_moment))
+
+                elif isinstance(note, SimaiTap | SimaiTouch):
+                    if isinstance(note2, SimaiTap | SimaiTouch):
+                        if i < j and note.pad == note2.pad and abs(note.moment - note2.moment) <= OVERLAY_THRESHOLD:
+                            muri_records.append(cls._overlap_record(note, note2))
+
+                    elif isinstance(note2, SimaiHold | SimaiTouchHold):
+                        if note.pad == note2.pad and \
+                                note2.moment - OVERLAY_THRESHOLD <= note.moment <= note2.end_moment + OVERLAY_THRESHOLD:
+                            muri_records.append(cls._overlap_record(note, note2))
+
+                elif isinstance(note, SimaiHold | SimaiTouchHold):
+                    if isinstance(note2, SimaiHold | SimaiTouchHold):
+                        if i < j and note.pad == note2.pad and (
+                                note2.moment - OVERLAY_THRESHOLD <= note.moment <= note2.end_moment + OVERLAY_THRESHOLD
+                                or note.moment - OVERLAY_THRESHOLD <= note2.moment <= note.end_moment + OVERLAY_THRESHOLD
+                        ):
+                            muri_records.append(cls._overlap_record(note, note2))
+
+
+        for record in muri_records:
+            if record["type"] == "Overlap":
+                msg = "叠键无理：\"{note}\"(L{line},C{col}) 与 ".format_map(record["affected"])
+                msg += "\"{note}\"(L{line},C{col}) 重叠".format_map(record["cause"])
+                print(msg)
+            elif record["type"] == "SlideHeadTap":
+                msg = "外键无理：\"{note}\"(L{line},C{col}) 可能被 ".format_map(record["affected"])
+                msg += "\"{note}\"(L{line},C{col}) 蹭到 ".format_map(record["cause"])
+                msg += "(%+.2f ms)" % (record["delta"] * 1000 / JUDGE_TPS)
+                print(msg)
+            elif record["type"] == "TapOnSlide":
+                msg = "撞尾无理：\"{note}\"(L{line},C{col}) 可能被 ".format_map(record["affected"])
+                msg += "\"{note}\"(L{line},C{col}) 蹭到 ".format_map(record["cause"])
+                msg += "(%+.2f ms)" % (record["delta"] * 1000 / JUDGE_TPS)
+                print(msg)
+
+        return muri_records
+
+
 class MultiTouchMuri:
     __slots__ = ("_cursors",)
     def __init__(self, cursors: Iterable[tuple[int, int, str]]):
@@ -58,18 +195,12 @@ class JudgeManager:
         self.pad_states = 0
         self.last_pad_source: dict[Pad, Action] = {}
         self.multi_touch_muri: set[MultiTouchMuri] = set()
+        self.muri_record_list = []
+        self.static_muri_record_list = []
 
     def load_chart(self, note_sequence: "Sequence[SimaiNote]", action_sequence: "Sequence[Action]"):
         self.note_sequence = note_sequence
         self.action_sequence = action_sequence
-        self.timer = -JUDGE_TPS * 3
-        self.note_pointer = 0
-        self.action_pointer = 0
-        self.active_notes = []
-        self.active_actions = []
-        self.pad_states = 0
-        self.last_pad_source = {}
-        self.multi_touch_muri = set()
 
     def tick(self, elapsed_time: float) -> tuple[list[TouchPoint], int, list[SimaiNote]]:
         """返回值是三元组。ret[0]: 本tick的触点列表，ret[1]: 手的数量，ret[2]: 本tick完成的note列表"""
@@ -155,9 +286,19 @@ class JudgeManager:
             affected_cursors = set(a.source.cursor for _0, _1, a in this_frame_touch_points)
             muri = MultiTouchMuri(affected_cursors)
             if muri not in self.multi_touch_muri:
-                self.multi_touch_muri.add(muri)
-                m, s = divmod(self.timer / JUDGE_TPS, 60)
-                msg = "[%02d:%05.2f] 多押无理：" % (int(m), s)
+                self.multi_touch_muri.add(muri)     # 记录下来避免重复报告
+                self.muri_record_list.append(
+                    {
+                        "time": self.timer / JUDGE_TPS,
+                        "type": "MultiTouch",
+                        "hand_count": hand_count,
+                        "cause": [{"line": c[0], "col": c[1], "note": c[2]} for c in affected_cursors],
+                    }
+                )
+
+                s, f = divmod(self.timer / JUDGE_TPF, 60)
+                m, s = divmod(int(s), 60)
+                msg = "[%02d:%02dF%05.2f] 多押无理：" % (m, s, f)
                 msg += "下列note可能形成了%d押\n    " % hand_count
                 msg += " ".join("\"{2}\"(L{0},C{1})".format(*n) for n in affected_cursors)
                 print(msg)
@@ -186,19 +327,32 @@ class JudgeManager:
                     # retval == True -> event consumed
                     break
 
-        # update routine
+        # note的例行更新
         for note in self.active_notes:
             note.update(self.timer, pad_source_dict, pad_up_source_dict)
             if note.finish(self.timer):
                 finished_notes.append(note)
 
+        # 从活动note列表里清除已经结束的note
         for note in finished_notes:
+            self.active_notes.remove(note)
+
+            # ========== 如果判定结果不是critical说明存在无理 ==========
             if note.judge == JudgeResult.Bad:
                 if isinstance(note, SimaiSlideChain):
                     # 是星星，那就是内屏无理
-                    m, s = divmod(self.timer / JUDGE_TPS, 60)
-                    msg = "[%02d:%05.2f] 内屏无理：" % (int(m), s)
-                    msg += "\"{2}\"(L{0},C{1}) 被提前蹭绿，相关判定区如下".format(*note.cursor)
+                    record = {
+                        "time": self.timer / JUDGE_TPS,
+                        "type": "SlideTooFast",
+                        "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
+                        "judge_areas": [],
+                    }
+
+                    s, f = divmod(self.timer / JUDGE_TPF, 60)
+                    m, s = divmod(int(s), 60)
+                    msg = "[%02d:%02dF%05.2f] 内屏无理：" % (m, s, f)
+                    msg += "\"{2}\"(L{0},C{1}) 被提前蹭掉，相关判定区如下".format(*note.cursor)
+
                     # 首先找到现在slide应当处理到哪个区
                     idx = 0
                     for idx, t in enumerate(note.segment_shoot_moments):
@@ -208,24 +362,58 @@ class JudgeManager:
                     p = (self.timer - note.segment_shoot_moments[idx]) / note.durations[idx]
                     if p < 0:
                         p = 0
-                    # 我们假装每一段slide的判定区都是等距分布的，反正这里只是估算
+                    # 我们假装每一段slide的判定区都是等距分布的，反正这里只是估算就够
                     area_idx = int(len(note.segment_infos[idx].judge_sequence) * p) + note.segment_idx_bias[idx]
+
                     # 我们关心从此时slide应当处理到的判定区起，一直到结尾的所有判定区都是怎么被按掉的
                     for i in range(area_idx, note.total_area_num):
-                        act = note.area_judge_actions[i]
+                        entry = note.area_judge_actions[i]
                         area = note.judge_sequence[i]
-                        if act is None:
+                        if entry is None:
+                            record["judge_areas"].append(
+                                {
+                                    "area": "/".join(p.name for p in area),
+                                    "cause": "skipped",
+                                    "time": -1,
+                                }
+                            )
                             msg += "\n    {0}: {1}".format("/".join(p.name for p in area), "Skipped")
                         else:
-                            msg += "\n    {0}: {1}".format(
-                                "/".join(p.name for p in area), "\"{2}\"(L{0},C{1})".format(*act.source.cursor)
+                            act, t = entry
+                            record["judge_areas"].append(
+                                {
+                                    "area": "/".join(p.name for p in area),
+                                    "cause": {"line": act.source.cursor[0],
+                                              "col": act.source.cursor[1],
+                                              "note": act.source.cursor[2]},
+                                    "time": t / JUDGE_TPS,
+                                }
                             )
+                            s, f = divmod(t / JUDGE_TPF, 60)
+                            m, s = divmod(int(s), 60)
+                            msg += "\n    {0}: {1}@{2} (H{3}, S{4}, J{5}, E{6})".format(
+                                "/".join(p.name for p in area),
+                                "\"{2}\"(L{0},C{1})".format(*act.source.cursor),
+                                "%02d:%02dF%05.2f" % (m, s, f),
+                                "%+.2f" % ((t - note.moment) * 1000 / JUDGE_TPS),
+                                "%+.2f" % ((t - note.shoot_moment) * 1000 / JUDGE_TPS),
+                                "%+.2f" % ((t - note.critical_moment) * 1000 / JUDGE_TPS),
+                                "%+.2f" % ((t - note.end_moment) * 1000 / JUDGE_TPS),
+                            )
+                    self.muri_record_list.append(record)
                     print(msg)
 
                 elif isinstance(note, SimaiWifi):
-                    m, s = divmod(self.timer / JUDGE_TPS, 60)
-                    msg = "[%02d:%05.2f] 内屏无理：" % (int(m), s)
-                    msg += "\"{2}\"(L{0},C{1}) 被提前蹭绿，相关判定区如下".format(*note.cursor)
+                    record = {
+                        "time": self.timer / JUDGE_TPS,
+                        "type": "SlideTooFast",
+                        "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
+                        "judge_areas": [],
+                    }
+                    s, f = divmod(self.timer / JUDGE_TPF, 60)
+                    m, s = divmod(int(s), 60)
+                    msg = "[%02d:%02dF%05.2f] 内屏无理：" % (m, s, f)
+                    msg += "\"{2}\"(L{0},C{1}) 被提前蹭掉，相关判定区如下".format(*note.cursor)
                     # 首先找到现在slide应当处理到哪个区
                     p = (self.timer - note.shoot_moment) / note.duration
                     if p < 0:
@@ -234,31 +422,77 @@ class JudgeManager:
                     # 我们关心从此时slide应当处理到的判定区起，一直到结尾的所有判定区都是怎么被按掉的
                     for i in range(area_idx, note.total_area_num):
                         for j in range(3):
-                            act = note.area_judge_actions[j][i]
+                            entry = note.area_judge_actions[j][i]
                             area = note.info.tri_judge_sequence[j][i]
-                            if act is None:
+                            if entry is None:
+                                record["judge_areas"].append(
+                                    {
+                                        "area": "/".join(p.name for p in area),
+                                        "cause": "skipped",
+                                        "time": -1,
+                                    }
+                                )
                                 msg += "\n    {0}: {1}".format("/".join(p.name for p in area), "Skipped")
                             else:
-                                msg += "\n    {0}: {1}".format(
-                                    "/".join(p.name for p in area), "\"{2}\"(L{0},C{1})".format(*act.source.cursor)
+                                act, t = entry
+                                record["judge_areas"].append(
+                                    {
+                                        "area": "/".join(p.name for p in area),
+                                        "cause": {"line": act.source.cursor[0],
+                                                  "col": act.source.cursor[1],
+                                                  "note": act.source.cursor[2]},
+                                        "time": t / JUDGE_TPS,
+                                    }
                                 )
+                                s, f = divmod(t / JUDGE_TPF, 60)
+                                m, s = divmod(int(s), 60)
+                                msg += "\n    {0}: {1}@{2} (H{3}, S{4}, J{5}, E{6})".format(
+                                    "/".join(p.name for p in area),
+                                    "\"{2}\"(L{0},C{1})".format(*act.source.cursor),
+                                    "%02d:%02dF%05.2f" % (m, s, f),
+                                    "%+.2f" % ((t - note.moment) * 1000 / JUDGE_TPS),
+                                    "%+.2f" % ((t - note.shoot_moment) * 1000 / JUDGE_TPS),
+                                    "%+.2f" % ((t - note.critical_moment) * 1000 / JUDGE_TPS),
+                                    "%+.2f" % ((t - note.end_moment) * 1000 / JUDGE_TPS),
+                                )
+                    self.muri_record_list.append(record)
                     print(msg)
 
                 else:
                     # 不是星星，那有可能是tap/hold提前蹭绿(fast)，或者叠键导致没判上(late)
                     if note.judge_moment < note.moment:
-                        m, s = divmod(self.timer / JUDGE_TPS, 60)
-                        msg = "[%02d:%05.2f] " % (int(m), s)
+                        self.muri_record_list.append(
+                            {
+                                "time": self.timer / JUDGE_TPS,
+                                "type": "SlideHeadTap" if isinstance(note.judge_action, ActionExtraPadDown) else "TapOnSlide",
+                                "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
+                                "cause": {"line": note.judge_action.source.cursor[0],
+                                          "col": note.judge_action.source.cursor[1],
+                                          "note": note.judge_action.source.cursor[2]},
+                            }
+                        )
+
+                        s, f = divmod(self.timer / JUDGE_TPF, 60)
+                        m, s = divmod(int(s), 60)
+                        msg = "[%02d:%02dF%05.2f] " % (m, s, f)
                         msg += "外键无理：" if isinstance(note.judge_action, ActionExtraPadDown) else "撞尾无理："
                         msg += "\"{2}\"(L{0},C{1}) 被 ".format(*note.cursor)
-                        msg += "\"{2}\"(L{0},C{1}) 蹭到".format(*note.judge_action.source.cursor)
+                        msg += "\"{2}\"(L{0},C{1}) 蹭到 ".format(*note.judge_action.source.cursor)
+                        msg += "(%+.2f ms)" % ((note.judge_moment - note.moment) * 1000 / JUDGE_TPS)
+
                     else:
+                        self.muri_record_list.append(
+                            {
+                                "time": self.timer / JUDGE_TPS,
+                                "type": "Overlap",
+                                "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
+                            }
+                        )
+
                         m, s = divmod(self.timer / JUDGE_TPS, 60)
                         msg = "[%02d:%05.2f] 叠键无理：" % (int(m), s)
                         msg += "\"{2}\"(L{0},C{1}) 似乎与另一个note重叠".format(*note.cursor)
                     print(msg)
-
-            self.active_notes.remove(note)
 
         return this_frame_touch_points, hand_count, finished_notes
 

@@ -1,0 +1,13 @@
+{
+    "hand_radius_max": 180,
+    "hand_radius_wifi": 100,
+    "hand_radius_normal": 40,
+    "distance_merge_slide": 35,
+    "tap_on_slide_threshold": 0.3333333333333333,
+    "touch_on_slide_threshold": 8,
+    "overlay_threshold": 3,
+    "collide_threshold": 12,
+    "collide_tail_threshold": 3,
+    "extra_paddown_delay": 3,
+    "release_delay": 1.3333333333333333
+}

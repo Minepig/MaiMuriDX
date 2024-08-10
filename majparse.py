@@ -453,22 +453,28 @@ class SimaiParser:
                 for note2 in chart:
                     if isinstance(note2, SimaiSlideChain) and cls._check_touch_on_slide(note, note2):
                         note.set_on_slide(True)
+                        break
                     elif isinstance(note2, SimaiWifi) and cls._check_touch_on_wifi(note, note2):
                         note.set_on_slide(True)
+                        break
 
             if isinstance(note, SimaiTouchGroup):
                 for touch in note.children:
                     for note2 in chart:
                         if isinstance(note2, SimaiSlideChain) and cls._check_touch_on_slide(touch, note2):
                             touch.set_on_slide(True)
+                            break
                         elif isinstance(note2, SimaiWifi) and cls._check_touch_on_wifi(touch, note2):
                             touch.set_on_slide(True)
+                            break
                 if all(touch.on_slide for touch in note.children):
                     note.set_on_slide(True)
 
             # standard single-stroke slide
             if isinstance(note, SimaiSlideChain):
                 for note2 in chart:
+                    if note is note2:
+                        continue
                     if isinstance(note2, SimaiSlideChain | SimaiWifi):
                         if note.end == note2.start \
                                 and abs(note.end_moment - note2.shoot_moment) < TAP_ON_SLIDE_THRESHOLD:
@@ -478,7 +484,8 @@ class SimaiParser:
     @classmethod
     def _check_touch_on_slide(cls, touch: SimaiTouch, slide: SimaiSlideChain) -> bool:
         # check first pad (something like tap-slide pair)
-        if touch.pad == Pad(slide.start % 8) and abs(touch.moment - slide.shoot_moment) < 1:
+        if touch.pad == Pad(slide.start % 8) and \
+                slide.shoot_moment - TAP_ON_SLIDE_THRESHOLD < touch.moment < slide.shoot_moment + TOUCH_ON_SLIDE_THRESHOLD:
             return True
         # check remaining pad
         for info, duration, moment in zip(slide.segment_infos, slide.durations, slide.segment_shoot_moments):
@@ -492,7 +499,7 @@ class SimaiParser:
     @classmethod
     def _check_touch_on_wifi(cls, touch: SimaiTouch, slide: SimaiWifi) -> bool:
         # check first pad (something like tap-slide pair)
-        if touch.pad == Pad(slide.start % 8) and abs(touch.moment - slide.shoot_moment) < 1:
+        if touch.pad == Pad(slide.start % 8) and abs(touch.moment - slide.shoot_moment) < TOUCH_ON_SLIDE_THRESHOLD:
             return True
         # check remaining pad
         for p, t in slide.info.pad_enter_time:

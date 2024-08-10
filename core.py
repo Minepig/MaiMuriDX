@@ -1,6 +1,6 @@
 from math import sin, cos, radians
 from enum import Enum
-
+import json, pathlib
 
 # ==================== Constants Definition ====================
 # Geometry definitions
@@ -20,18 +20,10 @@ DISTANCE_B = CANVAS_SIZE * 220 / 1080
 DISTANCE_D = CANVAS_SIZE * 440 / 1080
 DISTANCE_E = CANVAS_SIZE * 310 / 1080
 
-DISTANCE_TAP = CANVAS_SIZE * 122.5 / 1080
+DISTANCE_TAP = CANVAS_SIZE * 122.5 / 1080       # 这是定义TAP会从距离中心多远的地方冒出来
 DISTANCE_EDGE = CANVAS_SIZE * 480 / 1080
 
-DISTANCE_JUDGE_EFF = CANVAS_SIZE * 80 / 1080
-
-HAND_RADIUS_MAX = CANVAS_SIZE * 180 / 1080
-HAND_RADIUS_WIFI = CANVAS_SIZE * 100 / 1080
-HAND_RADIUS_NORMAL = CANVAS_SIZE * 40 / 1080
-
-# 1pp5 & 1qq5 have a distance of 33.76 px
-# pp qq star have a distance of 36.54 px to the edge
-DISTANCE_MERGE_SLIDE = CANVAS_SIZE * 35 / 1080
+DISTANCE_JUDGE_EFF = CANVAS_SIZE * 80 / 1080    # 这是定义判定显示（目前只有Good）会出现在距离判定区中心多远的地方
 
 # Judging definitions
 JUDGE_TPF = 3   # make 60 FPS into 180 TPS
@@ -39,28 +31,68 @@ JUDGE_TPS = JUDGE_TPF * 60
 
 TAP_CRITICAL = JUDGE_TPF * 1
 TAP_AVAILABLE = JUDGE_TPF * 9
-TAP_ON_SLIDE_THRESHOLD = 1
 
 TOUCH_CRITICAL = JUDGE_TPF * 9
 TOUCH_AVAILABLE = JUDGE_TPF * 9
-TOUCH_ON_SLIDE_THRESHOLD = JUDGE_TPF * 8
 
 SLIDE_CRITICAL = JUDGE_TPF * 14
 SLIDE_AVAILABLE = JUDGE_TPF * 36
+
 # slides accept judging some time earlier than slide star should be hit
 # 6 frames (100ms) here, but maybe it's 3 frames?
-SLIDE_LEADING = JUDGE_TPF * 6
-
-# when slide shoots, pad A is touched another time, this defines the delay
-EXTRA_PADDOWN_DELAY = JUDGE_TPF * 3
-
-# when a note finished, the hand will release after several ticks
-RELEASE_DELAY = JUDGE_TPF * 1 + 1   # 4 ticks or 1.333 frame in 60 fps (48th note in bpm > 225 is treated as each)
+# True, it's 3 frames.
+SLIDE_LEADING = JUDGE_TPF * 3   # 星星入判
 
 # Rendering definitions
 RENDER_FPS = 60
 NOTE_SPEED = 9 / JUDGE_TPF
 TOUCH_DURATION = 30 * JUDGE_TPF
+
+# User defined constants
+config_path = pathlib.Path(__file__).parent.absolute() / "config.json"
+if not config_path.exists():
+    with config_path.open("w", encoding="u8") as f:
+        obj = {
+            "hand_radius_max": 180,
+            "hand_radius_wifi": 100,
+            "hand_radius_normal": 40,
+            "distance_merge_slide": 35,
+            "tap_on_slide_threshold": 1/JUDGE_TPF,
+            "touch_on_slide_threshold": 8,
+            "overlay_threshold": 3,
+            "collide_threshold": 12,
+            "collide_tail_threshold": 3,
+            "extra_paddown_delay": 3,
+            "release_delay": 1+1/JUDGE_TPF,
+        }
+        json.dump(obj, f, indent=4)
+
+with config_path.open(encoding="u8") as f:
+    obj = json.load(f)
+
+HAND_RADIUS_MAX = CANVAS_SIZE * obj["hand_radius_max"] / 1080      # 单手touch group允许的最大半径
+HAND_RADIUS_WIFI = CANVAS_SIZE * obj["hand_radius_wifi"] / 1080     # wifi星星触点半径
+HAND_RADIUS_NORMAL = CANVAS_SIZE * obj["hand_radius_normal"] / 1080    # 普通星星触点半径
+
+# 1pp5 & 1qq5 have a distance of 33.76 px
+# pp qq star have a distance of 36.54 px to the edge
+DISTANCE_MERGE_SLIDE = CANVAS_SIZE * obj["distance_merge_slide"] / 1080  # 允许两个普通星星触点合并的最大距离
+
+TAP_ON_SLIDE_THRESHOLD = JUDGE_TPF * obj["tap_on_slide_threshold"]      # 拍划tap时间容错
+TOUCH_ON_SLIDE_THRESHOLD = JUDGE_TPF * obj["touch_on_slide_threshold"]    # slide撞touch时间容错
+
+OVERLAY_THRESHOLD = JUDGE_TPF * obj["overlay_threshold"]   # 叠键无理最大时间差
+COLLIDE_THRESHOLD = JUDGE_TPF * obj["collide_threshold"]  # 撞尾/外键无理最大时间差
+COLLIDE_TAIL_THRESHOLD = JUDGE_TPF * obj["collide_tail_threshold"]  # slide的最后一个判定区上的撞尾，区间最多延伸至slide结束后多久
+
+# when slide shoots, pad A is touched another time, this defines the delay
+# 外无触发A区的延迟，但是目前这个数会和引导星在第一个A区停留的时长对比
+# 设定上外无触发A区的时刻不会晚于引导星离开A区
+EXTRA_PADDOWN_DELAY = JUDGE_TPF * obj["extra_paddown_delay"]
+
+# when a note finished, the hand will release after several ticks
+# 松手延迟，即任何操作在结束后延迟多久才松开判定区
+RELEASE_DELAY = JUDGE_TPF * obj["release_delay"]   # 4 ticks or 1.333 frame in 60 fps (48th note in bpm > 225 is treated as each)
 
 # ==================== Judge Enum ====================
 class JudgeResult(Enum):

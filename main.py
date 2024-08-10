@@ -3,8 +3,8 @@ from collections.abc import Sequence
 from traceback import print_exc
 
 from action import Action, ActionSlide
-from core import CANVAS_CENTER, CANVAS_SIZE, JudgeResult, Pad, JUDGE_TPS, RENDER_FPS
-from judge import JudgeManager
+from core import CANVAS_CENTER, CANVAS_SIZE, Pad, JUDGE_TPS, RENDER_FPS
+from judge import JudgeManager, StaticMuriChecker
 from majparse import NoteActionConverter, SimaiParser
 from render import EffectRenderer, NoteRenderer, PressEffect, SlideJudgeEffect, SimpleJudgeEffect
 from simai import SimaiNote, SimaiTouchGroup
@@ -148,11 +148,17 @@ class Game:
         self.judge_manager.load_chart(chart, actions)
 
     def run_no_render(self):
+        print("========== 静态检查 ==========")
+        StaticMuriChecker.check(self.judge_manager.note_sequence)
+        print("========== 动态检查 ==========")
         total = len(self.judge_manager.note_sequence)
         while self.judge_manager.note_pointer < total or len(self.judge_manager.active_notes) > 0:
             self.judge_manager.tick(1)
 
     def run(self):
+        print("========== 静态检查 ==========")
+        StaticMuriChecker.check(self.judge_manager.note_sequence)
+        print("========== 动态检查 ==========")
         self.last_frame_ms = self.timer_ms = pg.time.get_ticks()
         while self.running:
             try:
@@ -234,4 +240,4 @@ if __name__ == "__main__":
         game.run_no_render()
     else:
         game.run()
-
+    pg.quit()
