@@ -2,7 +2,7 @@ import random
 from typing import Sequence
 
 from core import HAND_RADIUS_MAX, Pad, JUDGE_TPS, TOUCH_ON_SLIDE_THRESHOLD, TAP_ON_SLIDE_THRESHOLD, \
-    HAND_RADIUS_NORMAL, HAND_RADIUS_WIFI, EXTRA_PADDOWN_DELAY
+    HAND_RADIUS_NORMAL, HAND_RADIUS_WIFI, EXTRA_PADDOWN_DELAY, DISTANCE_MERGE_SLIDE, DELTA_TANGENT_MERGE_SLIDE
 from slides import SlideInfo
 from simai import SimaiTap, SimaiHold, SimaiTouch, SimaiTouchHold, SimaiTouchGroup, \
                   SimaiSlideChain, SimaiWifi, SimaiNote
@@ -232,8 +232,9 @@ class SimaiParser:
         if all(map(lambda c: c in "12345678", note_str)):
             # simple tap each omitting "/"
             result = []
-            for c in note_str:
-                result.append(SimaiTap((cursor[0], cursor[1], c), now, int(c)))
+            col = cursor[1] - len(note_str)
+            for i, c in enumerate(note_str):
+                result.append(SimaiTap((cursor[0], col + i + 1, c), now, int(c)))
             return result
 
         # single note
@@ -270,14 +271,23 @@ class SimaiParser:
                 result = []
             else:
                 # separate the slide head
-                result = [SimaiTap((cursor[0], cursor[1], note_str[0] + "_"), now, pos)]
+                col = cursor[1] - len(note_str)
+                s = ""
+                for c in note_str:
+                    if c in "-^v<>Vpqszw":
+                        break
+                    s += c
+                    col += 1
+                result = [SimaiTap((cursor[0], col, s + "_"), now, pos)]
             # slide
             if "*" in note_str:
                 # same head slide
                 first, *remaining = note_str.split("*")
-                result.extend(cls._parse_slide_note((cursor[0], cursor[1], first), first, now, bpm))
+                col = cursor[1] - len(note_str) + len(first)
+                result.extend(cls._parse_slide_note((cursor[0], col, first), first, now, bpm))
                 for s in remaining:
-                    result.extend(cls._parse_slide_note((cursor[0], cursor[1], "*" + note_str[0] + s), note_str[0] + s, now, bpm))
+                    col += 1 + len(s)
+                    result.extend(cls._parse_slide_note((cursor[0], col, note_str[0] + "*" + s), note_str[0] + s, now, bpm))
             else:
                 result.extend(cls._parse_slide_note(cursor, note_str, now, bpm))
             return result
@@ -357,9 +367,9 @@ class SimaiParser:
         current_each: list[SimaiNote] = []
         result: list[SimaiNote] = []
 
-        for lineno, line in enumerate(lines):
+        for lineno, line in enumerate(lines, start=1):
             length = len(line)
-            line_iter = enumerate(line)
+            line_iter = enumerate(line, start=1)
             for column, ch in line_iter:
                 if ch == "|" and (column + 1) < length and line[column + 1] == "|":
                     # comments
@@ -480,6 +490,28 @@ class SimaiParser:
                                 and abs(note.end_moment - note2.shoot_moment) < TAP_ON_SLIDE_THRESHOLD:
                             note2.set_after_slide(True)
                             note.set_before_slide(True)
+                            continue
+
+                        if note.before_slide:
+                            continue
+
+                        if isinstance(note2, SimaiSlideChain) and note2.shoot_moment < note.end_moment < note2.critical_moment:
+                            # 一笔画还有一种情况，如果当前slide结尾正好“嵌”进另一个slide
+                            # 具体而言，此时有另一个slide的位置和切线与当前slide一致
+                            t = note.end_moment - 0.5   # 取即将结束的前 0.5 tick 比较位置和切线避免 edge case
+                            p = (t - note.segment_shoot_moments[-2]) / note.durations[-1]
+                            pos = note.segment_infos[-1].path.point(p)
+                            tan = note.segment_infos[-1].path.tangent(p)
+                            tan = tan / abs(tan)
+
+                            idx = note2.get_segment_idx(t)
+                            p2 = (t - note2.segment_shoot_moments[idx]) / note2.durations[idx]
+                            pos2 = note2.segment_infos[idx].path.point(p2)
+                            tan2 = note2.segment_infos[idx].path.tangent(p2)
+                            tan2 = tan2 / abs(tan2)
+
+                            if abs(pos - pos2) < DISTANCE_MERGE_SLIDE and abs(tan - tan2) < DELTA_TANGENT_MERGE_SLIDE:
+                                note.set_before_slide(True)
 
     @classmethod
     def _check_touch_on_slide(cls, touch: SimaiTouch, slide: SimaiSlideChain) -> bool:

@@ -1,8 +1,8 @@
 from typing import NamedTuple
 from collections.abc import Sequence, Iterable
 
-from core import JUDGE_TPF, JUDGE_TPS, DISTANCE_MERGE_SLIDE, JudgeResult, Pad
-from core import OVERLAY_THRESHOLD, TOUCH_ON_SLIDE_THRESHOLD, COLLIDE_THRESHOLD, COLLIDE_TAIL_THRESHOLD, TAP_ON_SLIDE_THRESHOLD
+from core import JUDGE_TPF, JUDGE_TPS, DISTANCE_MERGE_SLIDE, DELTA_TANGENT_MERGE_SLIDE, JudgeResult, Pad
+from core import OVERLAY_THRESHOLD, COLLIDE_EXTRA_DELTA, TAP_ON_SLIDE_THRESHOLD, COLLIDE_THRESHOLD
 from action import ActionExtraPadDown
 from simai import SimaiNote, SimaiSlideChain, SimaiWifi, SimaiTap, SimaiHold, SimaiTouch, SimaiTouchHold, SimaiTouchGroup
 from action import Action
@@ -30,6 +30,7 @@ from action import Action
 class TouchPoint(NamedTuple):
     center: complex
     radius: float
+    tangent: complex
     source: "Action"
 
 
@@ -78,8 +79,9 @@ class StaticMuriChecker:
 
                 if isinstance(note, SimaiSlideChain):
                     if isinstance(note2, SimaiTap | SimaiHold):
-                        if note2.moment < note.shoot_moment or note2.moment > note.end_moment + COLLIDE_THRESHOLD:
-                            continue  # 简单剪个枝，这里假设 COLLIDE_THRESHOLD > COLLIDE_TAIL_THRESHOLD
+                        if note2.moment < note.shoot_moment or \
+                                note2.moment > note.end_moment + COLLIDE_THRESHOLD:
+                            continue  # 简单剪个枝
 
                         # TODO
                         # 这里有一个问题，SlideInfo里记录的进入时刻并不满足顺序关系，因为会有OR判定区之类的东西
@@ -98,8 +100,9 @@ class StaticMuriChecker:
                                     continue
 
                                 enter_moment = moment + t * duration
-                                # 区间左端点取进入当前区-200ms，但不要早于星星启动
-                                start = max(enter_moment - COLLIDE_THRESHOLD, note.shoot_moment + TAP_ON_SLIDE_THRESHOLD)
+                                # 区间左端点取进入当前区-50ms，但不要早于星星启动
+                                start = max(enter_moment - COLLIDE_EXTRA_DELTA,
+                                            note.shoot_moment + TAP_ON_SLIDE_THRESHOLD)
                                 # 区间右端点取两者更晚：进入下一个区 / 进入当前区+200ms
                                 # 因为我不能确定“下一个区”，所以只取 进入当前区+200ms
                                 end = enter_moment + COLLIDE_THRESHOLD
@@ -107,7 +110,7 @@ class StaticMuriChecker:
                                     muri_records.append(cls._tap_on_slide_record(note2, note, note2.moment - enter_moment))
                         # 对于最后一个区，区间尾额外延长到星星结束+50ms
                         if note2.pad == Pad(note.end % 8) and \
-                                note.critical_moment + COLLIDE_THRESHOLD < note2.moment <= note.end_moment + COLLIDE_TAIL_THRESHOLD:
+                                note.critical_moment + COLLIDE_THRESHOLD < note2.moment <= note.end_moment + COLLIDE_EXTRA_DELTA:
                             muri_records.append(cls._tap_on_slide_record(note2, note, note2.moment - note.critical_moment))
 
                     # 摆烂了，不查slide和touch叠键了，交给动态检测
@@ -120,14 +123,17 @@ class StaticMuriChecker:
                     #             muri_records.append(cls._overlap_record(note2, note))
 
                 elif isinstance(note, SimaiWifi):
+                    if isinstance(note2, SimaiTap | SimaiHold):
+                        if note2.moment < note.shoot_moment or note2.moment > note.end_moment + COLLIDE_THRESHOLD:
+                            continue
                     # 偷个懒，wifi其实只需要查头尾
                     if isinstance(note2, SimaiTap | SimaiHold):
                         if note.start % 8 == note2.idx % 8 and \
                                 TAP_ON_SLIDE_THRESHOLD <= note2.moment - note.shoot_moment <= COLLIDE_THRESHOLD:
                             muri_records.append(cls._slide_head_tap_record(note2, note, note2.moment - note.shoot_moment))
                         elif note2.idx % 8 in (note.end % 8, (note.end + 1) % 8, (note.end - 1) % 8):
-                            start = note.critical_moment - COLLIDE_THRESHOLD
-                            end = max(note.critical_moment + COLLIDE_THRESHOLD, note.end_moment + COLLIDE_TAIL_THRESHOLD)
+                            start = note.critical_moment - COLLIDE_EXTRA_DELTA
+                            end = max(note.critical_moment + COLLIDE_THRESHOLD, note.end_moment + COLLIDE_EXTRA_DELTA)
                             if start <= note2.moment <= end:
                                 muri_records.append(cls._tap_on_slide_record(note2, note, note2.moment - note.critical_moment))
 
@@ -244,17 +250,23 @@ class JudgeManager:
             # 计算当前触点并记录
             circle = action.update(self.timer)
             if circle is not None:
-                center, radius = circle
-                touch_point = TouchPoint(center, radius, action)
+                center, radius, tangent = circle
+                touch_point = TouchPoint(center, radius, tangent, action)
 
                 # 如果当前动作允许触点合并 (目前只有普通slide的触点允许) 则尝试合并
-                if not action.can_merge():
+                # update: 现在 wifi 可以和 wifi 合并了
+                if action.merge_key() is None:
                     this_frame_touch_points.append(touch_point)
                 else:
-                    for center2, radius2, action2 in this_frame_touch_points:
-                        if not action2.can_merge():
+                    for center2, radius2, tangent2, action2 in this_frame_touch_points:
+                        if action2.merge_key() is None:
                             continue
-                        if abs(center - center2) < DISTANCE_MERGE_SLIDE:
+                        if action.merge_key() != action2.merge_key():
+                            continue
+                        if abs(tangent) < 0.01 or abs(tangent2) < 0.01:
+                            continue
+                        if abs(center - center2) < DISTANCE_MERGE_SLIDE \
+                                and abs(tangent2 - tangent) < DELTA_TANGENT_MERGE_SLIDE:
                             break
                     else:
                         this_frame_touch_points.append(touch_point)
@@ -269,7 +281,7 @@ class JudgeManager:
 
         # 计算按下的判定区，以及多押检测
         hand_count = 0
-        for center, radius, action in this_frame_touch_points:
+        for center, radius, tangent, action in this_frame_touch_points:
             # 找到所有与触点圆相交的判定区
             for pad in Pad:
                 if abs(pad.vec - center) <= (pad.radius + radius):
@@ -283,7 +295,7 @@ class JudgeManager:
 
         # 出现多押的情况，记录多押无理
         if hand_count > 2:
-            affected_cursors = set(a.source.cursor for _0, _1, a in this_frame_touch_points)
+            affected_cursors = set(a.source.cursor for _0, _1, _2, a in this_frame_touch_points)
             muri = MultiTouchMuri(affected_cursors)
             if muri not in self.multi_touch_muri:
                 self.multi_touch_muri.add(muri)     # 记录下来避免重复报告
@@ -300,7 +312,7 @@ class JudgeManager:
                 m, s = divmod(int(s), 60)
                 msg = "[%02d:%02dF%05.2f] 多押无理：" % (m, s, f)
                 msg += "下列note可能形成了%d押\n    " % hand_count
-                msg += " ".join("\"{2}\"(L{0},C{1})".format(*n) for n in affected_cursors)
+                msg += " ".join("\"{2}\"(L{0},C{1})".format(*n) for n in sorted(affected_cursors))
                 print(msg)
 
         # 产生pad down与pad up事件
@@ -322,6 +334,7 @@ class JudgeManager:
 
         # 发送pad down事件，self.active_notes是时间正序的
         for pad, action in pad_down_source_dict.items():
+            pass
             for note in self.active_notes:
                 if note.on_pad_down(self.timer, pad, action):
                     # retval == True -> event consumed
@@ -354,11 +367,7 @@ class JudgeManager:
                     msg += "\"{2}\"(L{0},C{1}) 被提前蹭掉，相关判定区如下".format(*note.cursor)
 
                     # 首先找到现在slide应当处理到哪个区
-                    idx = 0
-                    for idx, t in enumerate(note.segment_shoot_moments):
-                        if t > self.timer:
-                            break
-                    idx -= 1
+                    idx = note.get_segment_idx(self.timer)
                     p = (self.timer - note.segment_shoot_moments[idx]) / note.durations[idx]
                     if p < 0:
                         p = 0
@@ -422,6 +431,8 @@ class JudgeManager:
                     # 我们关心从此时slide应当处理到的判定区起，一直到结尾的所有判定区都是怎么被按掉的
                     for i in range(area_idx, note.total_area_num):
                         for j in range(3):
+                            if i == 0 and j == 1:
+                                break   # 避免起始A区反复打印3次
                             entry = note.area_judge_actions[j][i]
                             area = note.info.tri_judge_sequence[j][i]
                             if entry is None:
@@ -492,6 +503,7 @@ class JudgeManager:
                         m, s = divmod(self.timer / JUDGE_TPS, 60)
                         msg = "[%02d:%05.2f] 叠键无理：" % (int(m), s)
                         msg += "\"{2}\"(L{0},C{1}) 似乎与另一个note重叠".format(*note.cursor)
+                        msg += "(%+.2f ms)" % ((note.judge_moment - note.moment) * 1000 / JUDGE_TPS)
                     print(msg)
 
         return this_frame_touch_points, hand_count, finished_notes

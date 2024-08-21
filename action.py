@@ -22,12 +22,12 @@ class Action(metaclass=ABCMeta):
         self.require_two_hands = two_hands
 
     @abstractmethod
-    def update(self, now: float) -> None | tuple[complex, float]:
+    def update(self, now: float) -> None | tuple[complex, float, complex]:
         """
         Update action routine.
 
         @param now: current music timestamp in ticks
-        @return: None if no action is performed, or the touch circle in (center, radius)
+        @return: None if no action is performed, or the touch circle in (center, radius, tangent), tangent is normalized
         """
         raise NotImplementedError
 
@@ -40,8 +40,11 @@ class Action(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-    def can_merge(self) -> bool:
-        return False
+    def merge_key(self) -> None | str:
+        return None
+
+    def __repr__(self):
+        return "<Action \"{2}\" L{0}, C{1}>".format(*self.source.cursor)
 
 
 class ActionPress(Action):
@@ -67,10 +70,10 @@ class ActionPress(Action):
         if not tailless:
             self.end_moment += RELEASE_DELAY
 
-    def update(self, now: float) -> None | tuple[complex, float]:
+    def update(self, now: float) -> None | tuple[complex, float, complex]:
         if self.moment <= now < self.end_moment:
             pass
-            return self.position, self.radius
+            return self.position, self.radius, 0
         return None
 
     def finish(self, now: float) -> bool:
@@ -101,19 +104,20 @@ class ActionSlide(Action):
             self.end_moment += RELEASE_DELAY
         self.is_wifi = is_wifi
 
-    def update(self, now: float) -> None | tuple[complex, float]:
+    def update(self, now: float) -> None | tuple[complex, float, complex]:
         if self.moment <= now < self.end_moment:
             t = (now - self.moment) / self.duration
             if t >= 1:
-                return self.path.point(1), self.radius
-            return self.path.point(t), self.radius
+                t = 1
+            tan = self.path.tangent(t)
+            return self.path.point(t), self.radius, tan / abs(tan)
         return None
 
     def finish(self, now: float) -> bool:
         return now >= self.end_moment
 
-    def can_merge(self) -> bool:
-        return not self.is_wifi
+    def merge_key(self) -> None | str:
+        return "wifi" if self.is_wifi else "normal"
 
 
 class ActionExtraPadDown(Action):
@@ -133,7 +137,7 @@ class ActionExtraPadDown(Action):
         super().__init__(source, moment + delay, False)
         self.pad = pad
 
-    def update(self, now: float) -> None | tuple[complex, float]:
+    def update(self, now: float) -> None | tuple[complex, float, complex]:
         return None
 
     def finish(self, now: float) -> bool:
