@@ -297,11 +297,7 @@ class NoteRenderer:
             return
 
         # render slide star at current pos
-        idx = 0
-        for idx, t in enumerate(note.segment_shoot_moments):
-            if t > now:
-                break
-        idx -= 1
+        idx = note.get_segment_idx(now)
         # idx = note.cur_segment_idx
         proportion = (now - note.segment_shoot_moments[idx]) / note.durations[idx]
         pos = note.segment_infos[idx].path.point(proportion) + CANVAS_CENTER
@@ -326,7 +322,10 @@ class NoteRenderer:
             return
 
         # render slide track
-        self._render_slide_track_since(surface, note.info.key, min(note.cur_area_idxes))
+        idx = min(note.cur_area_idxes)
+        if not note.pad_c_passed:
+            idx = min(idx, note.total_area_num - 1)
+        self._render_slide_track_since(surface, note.info.key, idx)
 
         if now <= note.moment:
             # before waiting time start, slide star does not appear

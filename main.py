@@ -122,8 +122,9 @@ class GameRenderer:
 
 
 class Game:
-    def __init__(self):
-        self.renderer = GameRenderer()
+    def __init__(self, no_render: bool = False):
+        if not no_render:
+            self.renderer = GameRenderer()
         self.clock = pg.time.Clock()
         self.timer_ms = 0
         self.last_frame_ms = 0
@@ -143,22 +144,64 @@ class Game:
                     else:
                         pg.mixer.music.unpause()
 
+                elif event.key == pg.K_RIGHT and self.pause:
+                    pg.mixer.music.set_pos(1 / JUDGE_TPS)
+                    this_frame_touch_points, hand_count, finished_notes = self.judge_manager.tick(1)
+
+                    for note in finished_notes:
+                        self.renderer.note_renderer.generate_judge_effect(note, self.renderer.effect_renderer)
+
+                    for note in self.judge_manager.active_notes:
+                        if isinstance(note, SimaiTouchGroup):
+                            self.renderer.note_renderer.generate_judge_effect(note, self.renderer.effect_renderer)
+
+                    for c, r, t, action in this_frame_touch_points:
+                        flag = isinstance(action, ActionSlide)
+                        self.renderer.action_renderer.add_effect(
+                            PressEffect(self.judge_manager.timer, c, r, flag, hand_count > 2))
+
     def load_chart(self, chart: list[SimaiNote]):
         actions = NoteActionConverter.generate_action(chart)
         self.judge_manager.load_chart(chart, actions)
 
     def run_no_render(self):
         print("========== 静态检查 ==========")
-        StaticMuriChecker.check(self.judge_manager.note_sequence)
+        entries = StaticMuriChecker.check(self.judge_manager.note_sequence)
+        print()
         print("========== 动态检查 ==========")
         total = len(self.judge_manager.note_sequence)
         while self.judge_manager.note_pointer < total or len(self.judge_manager.active_notes) > 0:
             self.judge_manager.tick(1)
+        print()
+        counter = [0, 0, 0, 0, 0, 0, 0, 0]
+        for record in entries:
+            if record["type"] == "Overlap":
+                counter[0] += 1
+            elif record["type"] == "SlideHeadTap":
+                counter[1] += 1
+            elif record["type"] == "TapOnSlide":
+                counter[2] += 1
+        for record in self.judge_manager.muri_record_list:
+            if record["type"] == "Overlap":
+                counter[4] += 1
+            elif record["type"] == "SlideHeadTap":
+                counter[6] += 1
+            elif record["type"] == "TapOnSlide":
+                counter[7] += 1
+            elif record["type"] == "MultiTouch":
+                counter[3] += 1
+            elif record["type"] == "SlideTooFast":
+                counter[5] += 1
+        print(("检测完成，静态检查共发现 %d 个叠键无理、%d 个外键无理、%d 个撞尾无理，" +
+              "动态检查共发现 %d 个多押无理、%d 个叠键无理、%d 个内屏无理、%d 个外键无理、%d 个撞尾无理")
+              % tuple(counter))
 
     def run(self):
         print("========== 静态检查 ==========")
-        StaticMuriChecker.check(self.judge_manager.note_sequence)
+        entries = StaticMuriChecker.check(self.judge_manager.note_sequence)
+        print()
         print("========== 动态检查 ==========")
+        print("请在 pygame 窗口中按空格开始检查 ...")
         self.last_frame_ms = self.timer_ms = pg.time.get_ticks()
         while self.running:
             try:
@@ -186,9 +229,13 @@ class Game:
                         if isinstance(note, SimaiTouchGroup):
                             self.renderer.note_renderer.generate_judge_effect(note, self.renderer.effect_renderer)
 
-                    for c, r, action in this_frame_touch_points:
+                    for c, r, t, action in this_frame_touch_points:
                         flag = isinstance(action, ActionSlide)
                         self.renderer.action_renderer.add_effect(PressEffect(self.judge_manager.timer, c, r, flag, hand_count > 2))
+
+                    # if self.judge_manager.timer > 47 * 180:
+                    #     pg.mixer.music.pause()
+                    #     self.pause = True
 
                 if timer_new - self.last_frame_ms >= 1000 / RENDER_FPS:
                     self.renderer.clear_canvas()
@@ -202,6 +249,30 @@ class Game:
             except Exception as e:
                 # print_exc()
                 raise e
+
+        print()
+        counter = [0, 0, 0, 0, 0, 0, 0, 0]
+        for record in entries:
+            if record["type"] == "Overlap":
+                counter[0] += 1
+            elif record["type"] == "SlideHeadTap":
+                counter[1] += 1
+            elif record["type"] == "TapOnSlide":
+                counter[2] += 1
+        for record in self.judge_manager.muri_record_list:
+            if record["type"] == "Overlap":
+                counter[4] += 1
+            elif record["type"] == "SlideHeadTap":
+                counter[6] += 1
+            elif record["type"] == "TapOnSlide":
+                counter[7] += 1
+            elif record["type"] == "MultiTouch":
+                counter[3] += 1
+            elif record["type"] == "SlideTooFast":
+                counter[5] += 1
+        print(("检测完成，静态检查共发现 %d 个叠键无理、%d 个外键无理、%d 个撞尾无理，" +
+               "动态检查共发现 %d 个多押无理、%d 个叠键无理、%d 个内屏无理、%d 个外键无理、%d 个撞尾无理")
+              % tuple(counter))
 
 
 
@@ -233,10 +304,11 @@ if __name__ == "__main__":
     print("可用难度:", ", ".join(charts.keys()))
     d = input("输入难度: ")
     chart_str = charts[d]
+    flag = bool(input("是否关闭渲染？(不输入任何内容即为否)"))
 
-    game = Game()
+    game = Game(flag)
     game.load_chart(SimaiParser.parse_simai_chart(chart_str, first))
-    if input("是否关闭渲染？(不输入任何内容即为否)"):
+    if flag:
         game.run_no_render()
     else:
         game.run()

@@ -834,5 +834,24 @@ if __name__ == "__main__":
     print(len(SlideInfo._entries))
     # for key, info in WifiInfo._entries.items():
     #     print(info.pad_enter_time[-1])
+    import pygame
+    pygame.init()
+    screen = pygame.display.set_mode([540, 540])
+    screen.blit(pygame.image.load("images/background/Default_Background.png").convert_alpha(), (0, 0))
+    for info in SlideInfo._entries.values():
+        if info.type_ != SlideType.BigCurve_CCW and info.type_ != SlideType.BigCurve_CW:
+            continue
+        points = []
+        for i in range(10000):
+            c = info.path.point(i / 10000) + complex(270, 270)
+            points.append((c.real, c.imag))
+        pygame.draw.aalines(screen, [0, 233, 255], False, points)
+        pygame.display.flip()
+    pygame.image.save(screen, "dummy/slide_only_ppqq.png")
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
 
 

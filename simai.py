@@ -5,7 +5,7 @@ from itertools import accumulate
 
 from core import Pad, JudgeResult, \
                  TAP_CRITICAL, TAP_AVAILABLE, TOUCH_CRITICAL, TOUCH_AVAILABLE, \
-                 SLIDE_CRITICAL, SLIDE_AVAILABLE, SLIDE_LEADING
+                 SLIDE_CRITICAL, SLIDE_AVAILABLE, SLIDE_LEADING, SLIDE_DELTA_SHIFT, FLAG_WIFI_NEED_C
 from slides import SlideInfo, WifiInfo
 from util import get_covering_circle
 
@@ -17,14 +17,14 @@ class SimaiNote(metaclass=ABCMeta):
         """
         Base class of all simai notes.
 
-        @param cursor: line & column No in original file
+        @param cursor: line & column No & note string in original file
         @param moment: the music timestamp when note is activated, in ticks
         """
         self.cursor: tuple[int, int, str] = cursor
         self.moment: float = moment
         self.judge: JudgeResult = JudgeResult.Not_Yet
         self.judge_moment: float = -1
-        self.judge_action: "Action | None" = None
+        self.judge_action: "Action | None" = None   # 用来记录导致这个 note 判定的 action
 
     @abstractmethod
     def update(self, now: float, pad_states: "dict[Pad, Action | None]", pad_up_this_tick: "dict[Pad, Action | None]") -> None:
@@ -57,6 +57,9 @@ class SimaiNote(metaclass=ABCMeta):
         @param now: current music timestamp in ticks
         """
         raise NotImplementedError
+
+    def __repr__(self):
+        return "<Simai \"{2}\" L{0}, C{1}>".format(*self.cursor)
 
 
 class SimaiSimpleNote(SimaiNote):
@@ -112,8 +115,8 @@ class SimaiTap(SimaiSimpleNote):
         @param idx: the position of the note (1~8)
         """
         super().__init__(cursor, moment, Pad(idx % 8))
-        self.idx = idx
-        self.is_slide_head = False
+        self.idx = idx      # 这个指的是键号
+        self.is_slide_head = False      # 表示是拍划的Tap，于是可以不生成action
 
     def set_slide_head(self, is_slide_head: bool):
         self.is_slide_head = is_slide_head
@@ -163,8 +166,8 @@ class SimaiTouch(SimaiSimpleNote):
         @param pad: the position of the note (A1, B3, C, E8, etc.)
         """
         super().__init__(cursor, moment, Pad[pad])
-        self.on_slide = False
-        self.group_parent: "SimaiTouchGroup | None" = None
+        self.on_slide = False       # 被slide撞到了，所以不用生成action
+        self.group_parent: "SimaiTouchGroup | None" = None  # 如果是touchgroup的一员，这个属性会引用touchgroup对象，否则就是None
 
     def set_on_slide(self, on_slide: bool):
         self.on_slide = on_slide
@@ -196,15 +199,16 @@ class SimaiTouchGroup(SimaiNote):
         for touch in children:
             touch.set_group_parent(self)
 
+        # 计算最小覆盖圆，用于后续生成action
         points = [t.pad.vec for t in self.children]
         center, radius = get_covering_circle(points)
         self.center = center
         self.radius = radius
 
-        self.on_slide = False
-        self.threshold = len(self.children) * 0.51
+        self.on_slide = False       # 如果组里每一个touch都被slide撞了，那么这一整个组都不需要action了
+        self.threshold = len(self.children) * 0.51  # 用来处理半数以上容错的
 
-        self.effect_generated = [False] * len(self.children)
+        self.effect_generated = [False] * len(self.children)    # 用来指示组里每个touch有没有显示过判定特效
 
     def set_on_slide(self, on_slide: bool):
         self.on_slide = on_slide
@@ -274,15 +278,16 @@ class SimaiSlideChain(SimaiNote):
             raise TypeError("either `durations` or `total_duration` need to be specified")
 
         super().__init__(cursor, moment)
-        self.shapes = tuple(shapes)
-        self.segment_infos = tuple(SlideInfo.get(k) for k in shapes)
-        self.start = self.segment_infos[0].start
-        self.end = self.segment_infos[-1].end
+        self.shapes = tuple(shapes)     # 存储了slidechain里每一段的形状，比如1-3-5这里就是("1-3", "3-5")
+        self.segment_infos: tuple[SlideInfo, ...] = tuple(SlideInfo.get(k) for k in shapes)     # 每一段的信息
+        self.start = self.segment_infos[0].start    # 整个slidechain的起点
+        self.end = self.segment_infos[-1].end       # 终点
 
-        self.available_moment = moment - SLIDE_LEADING     # slide is available 100ms before star is hit
-        self.wait_duration = wait
-        self.shoot_moment = moment + wait
+        self.available_moment = moment - SLIDE_LEADING     # slide is available 50ms before star is hit （slide入判）
+        self.wait_duration = wait       # 初始等待时间（一般是一拍，但是单位是tick）
+        self.shoot_moment = moment + wait   # slide启动时刻
 
+        # 计算出每一个slide段的划动时间
         if durations is not None:
             self.durations = tuple(durations)
         else:
@@ -290,11 +295,15 @@ class SimaiSlideChain(SimaiNote):
             total_length = sum(lengths)
             self.durations = tuple(x * total_duration / total_length for x in lengths)
         assert len(self.segment_infos) == len(self.durations)
+        # 下面这个元组元素数比slide段数多一项，最后一项其实就是slide的结束时刻
         self.segment_shoot_moments = tuple(accumulate(self.durations, initial=self.shoot_moment))
         self.end_moment = self.segment_shoot_moments[-1]
 
+        # 引导星星在最后一个区停留的时长
         self.last_area_duration = (1 - self.segment_infos[-1].pad_enter_time[-1].t) * self.durations[-1]
+        # 正解时刻，即引导星星进入最后一个区的时刻
         self.critical_moment = self.end_moment - self.last_area_duration
+        # critical判定时长，需要考虑区间扩展机制
         self.critical_delta = min(SLIDE_AVAILABLE, (SLIDE_CRITICAL + self.last_area_duration / 4))
 
         judge_sequence = list(self.segment_infos[0].judge_sequence)
@@ -307,18 +316,28 @@ class SimaiSlideChain(SimaiNote):
             partition[-1] = True
             partition.extend([False] * (len(info.judge_sequence) - 1))
         partition.append(False)
-        self.judge_sequence = tuple(judge_sequence)
-        self.partition = tuple(partition)     # denoting whether a judge area is between 2 segments
-        self.segment_idx_bias = tuple(segment_idx_bias)     # the idx of 1st area of each segment in the full sequence
-        self.total_area_num = len(self.judge_sequence)
+        self.judge_sequence = tuple(judge_sequence)     # 整个slidechain的判定队列，每一项都是若干个 Pad 的集合
+        self.partition = tuple(partition)     # 如果某一个判定段介于两段slide之间（例如1-3-5的A3）那么这一项就是True，否则False
+        self.segment_idx_bias = tuple(segment_idx_bias)    # 每一段slide的第一个判定段的index
+        self.total_area_num = len(self.judge_sequence)     # 判定队列总长
 
         # variable fields
-        self.before_slide = False
-        self.after_slide = False  # indicating standard single-stroke slide
-        self.cur_area_idx = 0
-        self.cur_segment_idx = 0
-        self.pressing: Pad | None = None
+        self.before_slide = False   # 在一笔画中且后面还有别的slide，生成action有用
+        self.after_slide = False    # 在一笔画中且前面还有别的slide，生成action有用
+        self.cur_area_idx = 0       # 现在判定到判定队列里哪一个判定段
+        self.cur_segment_idx = 0    # 现在判定到哪一段slide
+        self.pressing: Pad | None = None        # 现在正在按下的判定区，如果现在没有按下就是None
+        # 下面这个列表用来存放每一个判定段分别是被什么action判定掉的，以及相应的判定时刻
         self.area_judge_actions: "list[tuple[Action, float] | None]" = [None] * self.total_area_num
+
+    def get_segment_idx(self, now: float) -> int:
+        """where is the guiding star now? return segment index
+        (Assuming shoot_moment <= now <= end_moment)"""
+        idx = 0
+        for idx, t in enumerate(self.segment_shoot_moments):
+            if t > now:
+                break
+        return idx - 1
 
     def set_before_slide(self, before_slide: bool):
         self.before_slide = before_slide
@@ -336,16 +355,23 @@ class SimaiSlideChain(SimaiNote):
         if self.judge != JudgeResult.Not_Yet:
             return
         if now < self.available_moment:
+            # 还没开始判定
             return
 
         while self.cur_area_idx < self.total_area_num:
+            # 下面这个函数会进行一轮判定区检查，如果有变化的话返回值就是True
             if not self._progress_slide_once(now, pad_states, pad_up_this_tick):
                 break
 
         if self.cur_area_idx >= self.total_area_num:
+            # slide划完了，进行判定
             self.judge_moment = now
             delta = now - self.critical_moment
-            self.judge = JudgeResult.Critical if (abs(delta) <= self.critical_delta) else JudgeResult.Bad
+            # SLIDE_DELTA_SHIFT的具体含义看开发笔记里的maimai判定全解
+            if (abs(delta) <= self.critical_delta) or (abs(delta + SLIDE_DELTA_SHIFT) <= SLIDE_CRITICAL):
+                self.judge = JudgeResult.Critical
+            else:
+                self.judge = JudgeResult.Bad
             return
 
         if now > self.end_moment + SLIDE_AVAILABLE:
@@ -387,8 +413,12 @@ class SimaiSlideChain(SimaiNote):
 
     def _progress_slide_once(self, now: float, pad_states: "dict[Pad, Action | None]",
                              pad_up_this_tick: "dict[Pad, Action | None]") -> bool:
+        # 进行一轮判定区检查
+        # pad_states 记录的是一个pad有没有被按下，如果有value就是导致按下的action，否则value就是None
+        # pad_up_this_tick 记录的是一个pad是不是这个tick内刚刚被松开，value的含义同上
+
         if self.pressing is None:
-            # pad down
+            # check pad down
             for pad in self.judge_sequence[self.cur_area_idx]:
                 if pad_states[pad] is not None:
                     self.pressing = pad
@@ -403,7 +433,7 @@ class SimaiSlideChain(SimaiNote):
                     return True
 
         else:
-            # pad up
+            # check pad up
             if pad_states[self.pressing] is None:
                 self.pressing = None
                 self.cur_area_idx += 1
@@ -412,6 +442,7 @@ class SimaiSlideChain(SimaiNote):
         if self._can_skip_area():
             # try to skip current area
             for pad in self.judge_sequence[self.cur_area_idx + 1]:
+                # if a pad has just been release in this tick, treat it as still being pressed
                 if pad_states[pad] is not None or pad_up_this_tick[pad] is not None:
                     self.pressing = pad
                     self.cur_area_idx += 1
@@ -443,8 +474,9 @@ class SimaiWifi(SimaiNote):
         self.shape = shape
         self.info = WifiInfo.get(shape)
         self.start = self.info.start
-        self.end = self.info.end
+        self.end = self.info.end    # 这个终点是simai语里的终点，例如1w5的5
 
+        # 下面这些属性同slidechain，但是wifi只有一段所以不需要列表了
         self.available_moment = moment - SLIDE_LEADING
         self.wait_duration = wait
         self.shoot_moment = moment + wait
@@ -457,11 +489,13 @@ class SimaiWifi(SimaiNote):
         self.total_area_num = len(self.info.tri_judge_sequence[1])      # all 3 lanes is length 4
 
         # variable fields
-        self.after_slide = False
-        self.cur_area_idxes = [0, 0, 0]
-        self.pressing: list[Pad | None] = [None, None, None]
-        self.lane_finished = [False, False, False]
+        self.after_slide = False            # 同slidechain，wifi后面不会接一笔画所以不需要before_slide
+        self.cur_area_idxes = [0, 0, 0]     # 每一轨分别判到第几段
+        self.pressing: list[Pad | None] = [None, None, None]    # 每一轨分别正在按下什么pad
+        self.lane_finished = [False, False, False]      # 每一轨是否已完成
+        # 同slidechain，记录了每一个判定段分别是被什么action判定掉的，以及相应的判定时刻
         self.area_judge_actions: "list[list[tuple[Action, float] | None]]" = [[None] * self.total_area_num for _ in range(3)]
+        self.pad_c_passed = not FLAG_WIFI_NEED_C    # 是否已经检测到C区抬手判（模拟旧框wifi用）
 
     def set_after_slide(self, after_slide: bool):
         self.after_slide = after_slide
@@ -482,8 +516,12 @@ class SimaiWifi(SimaiNote):
             while self.cur_area_idxes[lane] < self.total_area_num:
                 if not self._progress_lane_once(now, lane, pad_states, pad_up_this_tick):
                     break
+        # 模拟旧框的C区抬手判
+        if not self.pad_c_passed and self.cur_area_idxes[1] > 0 and pad_up_this_tick[Pad.C] is not None:
+            self.pad_c_passed = True
+            self.area_judge_actions[1][2] = (pad_up_this_tick[Pad.C], now)
 
-        if all(self.lane_finished):
+        if all(self.lane_finished) and self.pad_c_passed:
             self.judge_moment = now
             delta = now - self.critical_moment
             self.judge = JudgeResult.Critical if (abs(delta) <= self.critical_delta) else JudgeResult.Bad
@@ -496,6 +534,7 @@ class SimaiWifi(SimaiNote):
 
     def _progress_lane_once(self, now: float, lane: int, pad_states: "dict[Pad, Action | None]",
                             pad_up_this_tick: "dict[Pad, Action | None]") -> bool:
+        # 对某一轨进行一次判定区检查，基本上和slidechain的逻辑是一样的
         if self.pressing[lane] is None:
             for pad in self.info.tri_judge_sequence[lane][self.cur_area_idxes[lane]]:
                 if pad_states[pad] is not None:
@@ -535,10 +574,10 @@ if __name__ == "__main__":
     print(type(SimaiWifi))
     # l = list(Pad)
     # from random import sample
-    # s = [Pad.C, Pad.B6, Pad.B7, Pad.D7, Pad.E7]
-    # touches = [SimaiTouch((0, 0), 0, p.name) for p in s]
-    # touches.sort(key=lambda x: x.pad.value)
+    s = ["E2", "E3", "B2"]
+    touches = [SimaiTouch((0, 0, ""), 0, p) for p in s]
+    touches.sort(key=lambda x: x.pad.value)
     # print(*touches, sep="/")
-    # group: SimaiTouchGroup = SimaiParser._workup_each(touches)[0]
-    # print(group.radius, group.center)
+    group = SimaiTouchGroup((0, 0, ""), 0, touches)
+    print(group.radius, group.center)
 

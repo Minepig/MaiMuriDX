@@ -37,6 +37,7 @@ TOUCH_AVAILABLE = JUDGE_TPF * 9
 
 SLIDE_CRITICAL = JUDGE_TPF * 14
 SLIDE_AVAILABLE = JUDGE_TPF * 36
+SLIDE_DELTA_SHIFT = JUDGE_TPF * 3   # SEGA似乎把Slide判定往前移了3帧
 
 # slides accept judging some time earlier than slide star should be hit
 # 6 frames (100ms) here, but maybe it's 3 frames?
@@ -56,14 +57,15 @@ if not config_path.exists():
             "hand_radius_max": 180,
             "hand_radius_wifi": 100,
             "hand_radius_normal": 40,
-            "distance_merge_slide": 35,
+            "distance_merge_slide": 20,
+            "delta_tangent_merge_slide": 3,
             "tap_on_slide_threshold": 1/JUDGE_TPF,
             "touch_on_slide_threshold": 8,
-            "overlay_threshold": 3,
+            "overlay_threshold": 2,
             "collide_threshold": 12,
-            "collide_tail_threshold": 3,
             "extra_paddown_delay": 3,
             "release_delay": 1+1/JUDGE_TPF,
+            "wifi_need_c": False,
         }
         json.dump(obj, f, indent=4)
 
@@ -77,13 +79,14 @@ HAND_RADIUS_NORMAL = CANVAS_SIZE * obj["hand_radius_normal"] / 1080    # 普通�
 # 1pp5 & 1qq5 have a distance of 33.76 px
 # pp qq star have a distance of 36.54 px to the edge
 DISTANCE_MERGE_SLIDE = CANVAS_SIZE * obj["distance_merge_slide"] / 1080  # 允许两个普通星星触点合并的最大距离
+DELTA_TANGENT_MERGE_SLIDE = 2 * sin(radians(obj["delta_tangent_merge_slide"]) / 2)    # 允许两个普通星星触点合并的最大方向夹角
 
 TAP_ON_SLIDE_THRESHOLD = JUDGE_TPF * obj["tap_on_slide_threshold"]      # 拍划tap时间容错
 TOUCH_ON_SLIDE_THRESHOLD = JUDGE_TPF * obj["touch_on_slide_threshold"]    # slide撞touch时间容错
 
 OVERLAY_THRESHOLD = JUDGE_TPF * obj["overlay_threshold"]   # 叠键无理最大时间差
 COLLIDE_THRESHOLD = JUDGE_TPF * obj["collide_threshold"]  # 撞尾/外键无理最大时间差
-COLLIDE_TAIL_THRESHOLD = JUDGE_TPF * obj["collide_tail_threshold"]  # slide的最后一个判定区上的撞尾，区间最多延伸至slide结束后多久
+COLLIDE_EXTRA_DELTA = COLLIDE_THRESHOLD - TAP_AVAILABLE   # 撞尾/外键无理额外冗余时间
 
 # when slide shoots, pad A is touched another time, this defines the delay
 # 外无触发A区的延迟，但是目前这个数会和引导星在第一个A区停留的时长对比
@@ -92,7 +95,11 @@ EXTRA_PADDOWN_DELAY = JUDGE_TPF * obj["extra_paddown_delay"]
 
 # when a note finished, the hand will release after several ticks
 # 松手延迟，即任何操作在结束后延迟多久才松开判定区
-RELEASE_DELAY = JUDGE_TPF * obj["release_delay"]   # 4 ticks or 1.333 frame in 60 fps (48th note in bpm > 225 is treated as each)
+# 4 ticks or 1.333 frame in 60 fps (48th note in bpm > 225 is treated as each)
+RELEASE_DELAY = JUDGE_TPF * obj["release_delay"]
+
+# 指定Wifi星星是否需要C区抬手判
+FLAG_WIFI_NEED_C = obj["wifi_need_c"]
 
 # ==================== Judge Enum ====================
 class JudgeResult(Enum):
