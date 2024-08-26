@@ -6,7 +6,7 @@ Next-generation muri detector for simai, supports DX charts.
 
 ## 使用教程
 
-从 Release 页面下载打包好的 MaiMuriDX 压缩包，解压到你喜欢的位置。
+从 [Release](https://github.com/Minepig/MaiMuriDX/releases) 页面下载打包好的 MaiMuriDX 压缩包，解压到你喜欢的位置。
 
 双击 run.bat 即可运行，按照命令行窗口里的提示输入谱面文件路径，选择难度后，跟随程序的指引操作。
 
