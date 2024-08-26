@@ -85,7 +85,7 @@ class SimaiSimpleNote(SimaiNote):
     def update(self, now: float, pad_states: "dict[Pad, Action | None]", pad_up_this_tick: "dict[Pad, Action | None]"):
         if self.judge != JudgeResult.Not_Yet:
             return
-        if now - self.moment > self._get_critical_delta():
+        if now - self.moment > self._get_available_delta():
             # Too late
             self.judge = JudgeResult.Bad
             self.judge_moment = now
@@ -300,7 +300,7 @@ class SimaiSlideChain(SimaiNote):
         self.end_moment = self.segment_shoot_moments[-1]
 
         # 引导星星在最后一个区停留的时长
-        self.last_area_duration = (1 - self.segment_infos[-1].pad_enter_time[-1].t) * self.durations[-1]
+        self.last_area_duration = (1 - self.segment_infos[-1].critical_proportion) * self.durations[-1]
         # 正解时刻，即引导星星进入最后一个区的时刻
         self.critical_moment = self.end_moment - self.last_area_duration
         # critical判定时长，需要考虑区间扩展机制
@@ -482,7 +482,7 @@ class SimaiWifi(SimaiNote):
         self.shoot_moment = moment + wait
         self.duration = duration
         self.end_moment = moment + wait + duration
-        self.last_area_duration = (1 - self.info.pad_enter_time[-1].t) * self.duration
+        self.last_area_duration = (1 - self.info.critical_proportion) * self.duration
         self.critical_moment = self.end_moment - self.last_area_duration
         self.critical_delta = min(SLIDE_AVAILABLE, (SLIDE_CRITICAL + self.last_area_duration / 4))
 

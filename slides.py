@@ -21,6 +21,7 @@ class SlideBasicData:
     judge_sequence: Sequence[str | Collection[str]]
     arrow_segments: Sequence[int]
     pad_enter_time: Sequence[tuple[str, float]]
+    critical_proportion: float
 
 
 _basic_slide = {
@@ -33,6 +34,7 @@ _basic_slide = {
         [0, 3, 8, 13],
         [("D2", 0.191789), ("E2", 0.191789), ("A2", 0.378), ("B2", 0.378), ("D3", 0.622), ("E3", 0.622),
          ("A3", 0.808211)],
+        0.808047064288576,
     ),
     "1-4": SlideBasicData(
         "1-4",
@@ -41,6 +43,7 @@ _basic_slide = {
         ["A1", "B2", "B3", "A4"],
         [0, 3, 9, 13, 18],
         [("E2", 0.179274), ("B2", 0.318), ("B3", 0.5), ("E4", 0.682), ("A4", 0.820726)],
+        0.8207121684446903,
     ),
     "1-5": SlideBasicData(
         "1-5",
@@ -49,6 +52,7 @@ _basic_slide = {
         ["A1", "B1", "C", "B5", "A5"],
         [0, 3, 7, 12, 15, 19],
         [("B1", 0.2), ("C", 0.38), ("B5", 0.66), ("A5", 0.837061)],
+        0.8371296141712933,
     ),
     "1-6": SlideBasicData(
         "1-6",
@@ -57,6 +61,7 @@ _basic_slide = {
         ["A1", "B8", "B7", "A6"],
         [0, 3, 9, 13, 18],
         [("E1", 0.179274), ("B8", 0.318), ("B7", 0.5), ("E7", 0.682), ("A6", 0.820726)],
+        0.8207121684446903,
     ),
     "1-7": SlideBasicData(
         "1-7",
@@ -66,6 +71,7 @@ _basic_slide = {
         [0, 3, 8, 13],
         [("D1", 0.191789), ("E1", 0.191789), ("A8", 0.378), ("B8", 0.378), ("D8", 0.622), ("E8", 0.622),
          ("A7", 0.808211)],
+        0.808047064288576,
     ),
 
     # ========== Lightning shape ==========
@@ -77,6 +83,7 @@ _basic_slide = {
         [0, 3, 9, 12, 17, 21, 25, 30],
         [("E1", 0.110923), ("B8", 0.196307), ("B7", 0.308658), ("C", 0.419819), ("B3", 0.606909), ("B4", 0.691342),
          ("E5", 0.803693), ("A5", 0.889077)],
+        0.8945350939288572,
     ),
 
     # ========== V-shape ==========
@@ -87,6 +94,7 @@ _basic_slide = {
         ["A1", "B1", "C", "B2", "A2"],
         [0, 3, 7, 12, 15, 19],
         [("B1", 0.2), ("C", 0.38), ("B2", 0.66), ("A2", 0.837061)],
+        0.8371296141712933,
     ),
     "1v3": SlideBasicData(
         "1v3",
@@ -95,6 +103,7 @@ _basic_slide = {
         ["A1", "B1", "C", "B3", "A3"],
         [0, 3, 7, 12, 15, 19],
         [("B1", 0.2), ("C", 0.38), ("B3", 0.66), ("A3", 0.837061)],
+        0.8371296141712933,
     ),
     "1v4": SlideBasicData(
         "1v4",
@@ -103,6 +112,7 @@ _basic_slide = {
         ["A1", "B1", "C", "B4", "A4"],
         [0, 3, 7, 12, 15, 19],
         [("B1", 0.2), ("C", 0.38), ("B4", 0.66), ("A4", 0.837061)],
+        0.8371296141712933,
     ),
     "1v6": SlideBasicData(
         "1v6",
@@ -111,6 +121,7 @@ _basic_slide = {
         ["A1", "B1", "C", "B6", "A6"],
         [0, 3, 7, 12, 15, 19],
         [("B1", 0.2), ("C", 0.38), ("B6", 0.66), ("A6", 0.837061)],
+        0.8371296141712933,
     ),
     "1v7": SlideBasicData(
         "1v7",
@@ -119,6 +130,7 @@ _basic_slide = {
         ["A1", "B1", "C", "B7", "A7"],
         [0, 3, 7, 12, 15, 19],
         [("B1", 0.2), ("C", 0.38), ("B7", 0.66), ("A7", 0.837061)],
+        0.8371296141712933,
     ),
     "1v8": SlideBasicData(
         "1v8",
@@ -127,6 +139,7 @@ _basic_slide = {
         ["A1", "B1", "C", "B8", "A8"],
         [0, 3, 7, 12, 15, 19],
         [("B1", 0.2), ("C", 0.38), ("B8", 0.66), ("A8", 0.837061)],
+        0.8371296141712933,
     ),
 
     # ========== L-shape (Grand V) ==========
@@ -138,6 +151,7 @@ _basic_slide = {
         [0, 3, 8, 17, 23, 27, 32],
         [("D1", 0.083149), ("E1", 0.083149), ("A8", 0.16388), ("B8", 0.16388), ("D8", 0.269665), ("E8", 0.269665),
          ("A7", 0.350396), ("E8", 0.535096), ("B8", 0.613678), ("B1", 0.716773), ("E2", 0.819867), ("A2", 0.89845)],
+        0.9051824887103896,
     ),
     "1V73": SlideBasicData(
         "1V73",
@@ -147,6 +161,7 @@ _basic_slide = {
         [0, 3, 9, 17, 21, 27, 30, 34],
         [("D1", 0.079442), ("E1", 0.079442), ("A8", 0.156573), ("B8", 0.156573), ("D8", 0.257641), ("E8", 0.257641),
          ("A7", 0.334772), ("B7", 0.531371), ("C", 0.636812), ("B3", 0.800831), ("A3", 0.904553)],
+        0.9045423890921412,
     ),
     "1V74": SlideBasicData(
         "1V74",
@@ -156,6 +171,7 @@ _basic_slide = {
         [0, 3, 9, 17, 23, 27, 32],
         [("D1", 0.083149), ("E1", 0.083149), ("A8", 0.16388), ("B8", 0.16388), ("D8", 0.269665), ("E8", 0.269665),
          ("A7", 0.350396), ("E7", 0.535096), ("B6", 0.613678), ("B5", 0.716773), ("E5", 0.819867), ("A4", 0.89845)],
+        0.8982430799086988,
     ),
     "1V75": SlideBasicData(
         "1V75",
@@ -166,6 +182,7 @@ _basic_slide = {
         [("D1", 0.095895), ("E1", 0.095895), ("A8", 0.189), ("B8", 0.189), ("D8", 0.311), ("E8", 0.311),
          ("A7", 0.404105), ("D7", 0.595895), ("E7", 0.595895), ("A6", 0.689), ("B6", 0.689), ("D6", 0.811),
          ("E6", 0.811), ("A5", 0.904105)],
+        0.904023532144288,
     ),
 
     # ========== Circle Arc (CCW) ==========
@@ -179,6 +196,7 @@ _basic_slide = {
         [("D1", 0.037582), ("A8", 0.087418), ("D8", 0.162582), ("A7", 0.212418), ("D7", 0.287582), ("A6", 0.337418),
          ("D6", 0.412582), ("A5", 0.462418), ("D5", 0.537582), ("A4", 0.587418), ("D4", 0.662582), ("A3", 0.712418),
          ("D3", 0.787582), ("A2", 0.837418), ("D2", 0.912582), ("A1", 0.962418)],
+        0.9418430836808935,
     ),
     "1<2": SlideBasicData(
         "1<2",
@@ -189,6 +207,7 @@ _basic_slide = {
         [("D1", 0.042951), ("A8", 0.099906), ("D8", 0.185808), ("A7", 0.242764), ("D7", 0.328665), ("A6", 0.385621),
          ("D6", 0.471522), ("A5", 0.528478), ("D5", 0.614379), ("A4", 0.671335), ("D4", 0.757236), ("A3", 0.814192),
          ("D3", 0.900094), ("A2", 0.957049)],
+        0.9335349527781641,
     ),
     "1<3": SlideBasicData(
         "1<3",
@@ -198,6 +217,7 @@ _basic_slide = {
         [0, 3, 11, 19, 27, 35, 43, 47],
         [("D1", 0.050109), ("A8", 0.116557), ("D8", 0.216776), ("A7", 0.283224), ("D7", 0.383443), ("A6", 0.449891),
          ("D6", 0.550109), ("A5", 0.616557), ("D5", 0.716776), ("A4", 0.783224), ("D4", 0.883443), ("A3", 0.949891)],
+        0.9224574449078581,
     ),
     "1<4": SlideBasicData(
         "1<4",
@@ -207,6 +227,7 @@ _basic_slide = {
         [0, 3, 11, 19, 27, 35, 39],
         [("D1", 0.060131), ("A8", 0.139869), ("D8", 0.260131), ("A7", 0.339869), ("D7", 0.460131), ("A6", 0.539869),
          ("D6", 0.660131), ("A5", 0.739869), ("D5", 0.860131), ("A4", 0.939869)],
+        0.9069489338894297,
     ),
     "1<5": SlideBasicData(
         "1<5",
@@ -216,6 +237,7 @@ _basic_slide = {
         [0, 3, 11, 19, 27, 31],
         [("D1", 0.075164), ("A8", 0.174836), ("D8", 0.325164), ("A7", 0.424836), ("D7", 0.575164), ("A6", 0.674836),
          ("D6", 0.825164), ("A5", 0.924836)],
+        0.8836861673617872,
     ),
     "1<6": SlideBasicData(
         "1<6",
@@ -224,6 +246,7 @@ _basic_slide = {
         ["A1", "A8", "A7", "A6"],
         [0, 3, 11, 19, 23],
         [("D1", 0.100218), ("A8", 0.233115), ("D8", 0.433552), ("A7", 0.566448), ("D7", 0.766885), ("A6", 0.899782)],
+        0.8449148898157162,
     ),
     "1<7": SlideBasicData(
         "1<7",
@@ -232,6 +255,7 @@ _basic_slide = {
         ["A1", "A8", "A7"],
         [0, 3, 11, 15],
         [("D1", 0.150328), ("A8", 0.349672), ("D8", 0.650328), ("A7", 0.849672)],
+        0.7673723347235742,
     ),
     "1<8": SlideBasicData(
         "1<8",
@@ -240,6 +264,7 @@ _basic_slide = {
         ["A1", "A8"],
         [0, 3, 7],
         [("D1", 0.300655), ("A8", 0.699345)],
+        0.5347446694471485,
     ),
 
     # ========== U-shape (CCW around center) ==========
@@ -251,6 +276,7 @@ _basic_slide = {
         [0, 3, 9, 12, 15, 18, 21, 24, 28, 33],
         [("E1", 0.099093), ("B8", 0.17537), ("B7", 0.275739), ("B6", 0.365444), ("B5", 0.455148), ("B4", 0.544852),
          ("B3", 0.634556), ("B2", 0.724261), ("E2", 0.82463), ("A1", 0.900907)],
+        0.9078510345660955,
     ),
     "1p2": SlideBasicData(
         "1p2",
@@ -260,6 +286,7 @@ _basic_slide = {
         [0, 3, 9, 12, 15, 18, 21, 25, 30],
         [("E1", 0.108876), ("B8", 0.192652), ("B7", 0.302912), ("B6", 0.401456), ("B5", 0.5), ("B4", 0.598544),
          ("B3", 0.697088), ("E3", 0.807348), ("A2", 0.891124)],
+        0.8979164072049147,
     ),
     "1p3": SlideBasicData(
         "1p3",
@@ -269,6 +296,7 @@ _basic_slide = {
         [0, 3, 9, 12, 15, 18, 22, 27],
         [("E1", 0.120758), ("B8", 0.213712), ("B7", 0.336025), ("B6", 0.445342), ("B5", 0.554658), ("B4", 0.663975),
          ("E4", 0.786288), ("A3", 0.879242)],
+        0.8753204196231978,
     ),
     "1p4": SlideBasicData(
         "1p4",
@@ -278,6 +306,7 @@ _basic_slide = {
         [0, 3, 9, 12, 15, 19, 24],
         [("E1", 0.135579), ("B8", 0.239942), ("B7", 0.377267), ("B6", 0.5), ("B5", 0.622733), ("E5", 0.760058),
          ("A4", 0.864421)],
+        0.8564138341553678,
     ),
     "1p5": SlideBasicData(
         "1p5",
@@ -286,6 +315,7 @@ _basic_slide = {
         ["A1", "B8", "B7", "B6", "A5"],
         [0, 3, 9, 12, 16, 21],
         [("E1", 0.154547), ("B8", 0.27351), ("B7", 0.430048), ("B6", 0.569952), ("E6", 0.72649), ("A5", 0.845453)],
+        0.8307482649911795,
     ),
     "1p6": SlideBasicData(
         "1p6",
@@ -296,7 +326,8 @@ _basic_slide = {
         [0, 3, 9, 12, 15, 18, 21, 24, 27, 30, 33, 37, 42],
         [("E1", 0.078061), ("B8", 0.138183), ("B7", 0.217269), ("B6", 0.287952), ("B5", 0.358635), ("B4", 0.429317),
          ("B3", 0.5), ("B2", 0.570683), ("B1", 0.641365), ("B8", 0.712048), ("B7", 0.782731), ("E7", 0.861817),
-         ("A6", 0.921939)]
+         ("A6", 0.921939)],
+        0.9248180283821024,
     ),
     "1p7": SlideBasicData(
         "1p7",
@@ -306,6 +337,7 @@ _basic_slide = {
         [0, 3, 9, 12, 15, 18, 21, 24, 27, 30, 34, 39],
         [("E1", 0.084019), ("B8", 0.148693), ("B7", 0.233795), ("B6", 0.309853), ("B5", 0.385912), ("B4", 0.461971),
          ("B3", 0.538029), ("B2", 0.614088), ("B1", 0.690147), ("B8", 0.766205), ("E8", 0.851307), ("A7", 0.915981)],
+        0.9183337525219146,
     ),
     "1p8": SlideBasicData(
         "1p8",
@@ -315,6 +347,7 @@ _basic_slide = {
         [0, 3, 9, 12, 15, 18, 21, 24, 27, 31, 36],
         [("E1", 0.090935), ("B8", 0.160934), ("B7", 0.253041), ("B6", 0.33536), ("B5", 0.41768), ("B4", 0.5),
          ("B3", 0.58232), ("B2", 0.66464), ("B1", 0.746959), ("E1", 0.839066), ("A8", 0.909065)],
+        0.9160235053661768,
     ),
 
     # ========== Cup-shape (CCW around center-right) ==========
@@ -326,6 +359,7 @@ _basic_slide = {
         [0, 3, 7, 12, 17, 24, 30, 35],
         [("B1", 0.1165), ("C", 0.2215), ("B4", 0.3732), ("E4", 0.4542), ("A3", 0.5255), ("D3", 0.6535),
          ("A2", 0.7315), ("D2", 0.8535), ("E2", 0.8535), ("A1", 0.933315)],
+        0.9265547247001151,
     ),
     "1pp2": SlideBasicData(
         "1pp2",
@@ -335,6 +369,7 @@ _basic_slide = {
         [0, 3, 7, 12, 17, 24, 28],
         [("B1", 0.1454), ("C", 0.2765), ("B4", 0.4666), ("E4", 0.5666), ("A3", 0.6583), ("D3", 0.8146),
          ("A2", 0.916833)],
+        0.9127873177855754,
     ),
     "1pp3": SlideBasicData(
         "1pp3",
@@ -343,6 +378,7 @@ _basic_slide = {
         ["A1", "B1", "C", "B4", "A3"],
         [0, 3, 7, 12, 17, 22],
         [("B1", 0.1855), ("C", 0.3566), ("B4", 0.5964), ("E4", 0.7312), ("A3", 0.849092)],
+        0.8490861517275813,
     ),
     "1pp4": SlideBasicData(
         "1pp4",
@@ -353,6 +389,7 @@ _basic_slide = {
         [0, 3, 7, 12, 17, 24, 31, 36, 41, 45, 49],
         [("B1", 0.0823), ("C", 0.1588), ("B4", 0.2694), ("E4", 0.3274), ("A3", 0.3793), ("D3", 0.4716), ("A2", 0.5284),
          ("E2", 0.6207), ("B1", 0.6726), ("C", 0.7506), ("B4", 0.8613), ("A4", 0.933673)],
+        0.9302407922453899,
     ),
     "1pp5": SlideBasicData(
         "1pp5",
@@ -363,6 +400,7 @@ _basic_slide = {
         [0, 3, 7, 12, 17, 24, 31, 36, 41, 45, 49],
         [("B1", 0.0825), ("C", 0.1605), ("B4", 0.2705), ("E4", 0.3278), ("A3", 0.3815), ("D3", 0.4725), ("A2", 0.5292),
          ("E2", 0.6238), ("B1", 0.6739), ("C", 0.7518), ("B5", 0.8572), ("A5", 0.933545)],
+        0.9302407922453899,
     ),
     "1pp6": SlideBasicData(
         "1pp6",
@@ -373,6 +411,7 @@ _basic_slide = {
         [("B1", 0.0844), ("C", 0.1624), ("B4", 0.2743), ("E4", 0.3333), ("A3", 0.3849), ("D3", 0.4808),
          ("A2", 0.5375), ("E2", 0.6352), ("B1", 0.6863), ("B8", 0.7622), ("C", 0.7622), ("B7", 0.8184),
          ("B6", 0.8628), ("E7", 0.8773), ("A6", 0.933545)],
+        0.928933514307743,
     ),
     "1pp7": SlideBasicData(
         "1pp7",
@@ -382,6 +421,7 @@ _basic_slide = {
         [0, 3, 7, 12, 17, 24, 31, 37, 41, 46],
         [("B1", 0.0896), ("C", 0.1732), ("B4", 0.2882), ("E4", 0.3516), ("A3", 0.4063), ("D3", 0.5066),
          ("A2", 0.5672), ("E2", 0.6695), ("B1", 0.7227), ("B8", 0.7967), ("E8", 0.8705), ("A7", 0.927354)],
+        0.9189446061450552,
     ),
     "1pp8": SlideBasicData(
         "1pp8",
@@ -392,6 +432,7 @@ _basic_slide = {
         [("B1", 0.0977), ("C", 0.1888), ("B4", 0.3195), ("E4", 0.3883), ("A3", 0.4485), ("D3", 0.5605),
          ("A2", 0.6255), ("D2", 0.7354), ("E2", 0.7354), ("A1", 0.7945), ("B1", 0.7945), ("D1", 0.8712),
          ("E1", 0.8712), ("A8", 0.942918)],
+        0.9397277728329182,
     ),
 
     # ========== Wifi shape ==========
@@ -405,6 +446,7 @@ _basic_slide = {
         [("E1", 0.191789), ("B1", 0.191789), ("E2", 0.191789), ("B2", 0.31), ("B8", 0.31), ("C", 0.4), ("B3", 0.5),
          ("B7", 0.5), ("B4", 0.618), ("B6", 0.618), ("B5", 0.666), ("E5", 0.75), ("E6", 0.75), ("A4", 0.823636),
          ("D5", 0.823636), ("A5", 0.823636), ("D6", 0.823636), ("A6", 0.823636)],
+        0.8371296141712933,
     ),
     # Right Lane and real path of right hand (A1 -> D5)
     "1Wi4": SlideBasicData(
@@ -414,6 +456,7 @@ _basic_slide = {
         ["A1", "B2", "B3", ["A4", "D5"]],
         [],
         [],
+        -1,
     ),
     # Left Lane and real path of left hand (A1 -> D6)
     "1Wi6": SlideBasicData(
@@ -423,6 +466,7 @@ _basic_slide = {
         ["A1", "B8", "B7", ["A6", "D6"]],
         [],
         [],
+        -1,
     ),
 }
 
@@ -568,6 +612,7 @@ class SlideInfo(SlideInfoBase):
             judge_sequence: Sequence[Collection[Pad]],
             arrow_segments: Sequence[int],
             pad_enter_time: Sequence[PadTimePair],
+            critical_proportion: float,
     ):
         self.key = key
         self.start = start
@@ -600,6 +645,8 @@ class SlideInfo(SlideInfoBase):
         self.pad_enter_time = tuple(sorted(pad_enter_time, key=lambda x: x[1]))
 
         assert {self.pad_enter_time[-1][0]} == self.judge_sequence[-1]
+
+        self.critical_proportion = critical_proportion
 
         self.total_arrow_count = arrow_segments[-1]
         l = []
@@ -645,7 +692,8 @@ class SlideInfo(SlideInfoBase):
         pad_enter_time = cls._transform_pad_enter_time(data.pad_enter_time, reflect, rotate)
 
         cls._entries[key] = cls(
-            key, start, end, type_, path, real_path, judge_sequence, data.arrow_segments, pad_enter_time
+            key, start, end, type_, path, real_path, judge_sequence, data.arrow_segments,
+            pad_enter_time, data.critical_proportion
         )
 
     @classmethod
@@ -740,6 +788,7 @@ class WifiInfo(SlideInfoBase):
             tri_judge_sequence: tuple[Sequence[Collection[Pad]], Sequence[Collection[Pad]], Sequence[Collection[Pad]]],
             arrow_segments: Sequence[int],
             pad_enter_time: Sequence[PadTimePair],
+            critical_proportion: float
     ):
         self.key = key
         self.start = start
@@ -764,6 +813,7 @@ class WifiInfo(SlideInfoBase):
         self.arrow_segments = tuple(arrow_segments)
 
         self.pad_enter_time = tuple(sorted(pad_enter_time, key=lambda x: x[1]))
+        self.critical_proportion = critical_proportion
 
         self.total_arrow_count = t = arrow_segments[-1]
         l = []
@@ -820,7 +870,8 @@ class WifiInfo(SlideInfoBase):
             pad_enter_time = cls._transform_pad_enter_time(data_mid.pad_enter_time, False, start - 1)
 
             cls._entries[key] = cls(
-                key, start, end, tri_path, di_real_path, tri_judge, data_mid.arrow_segments, pad_enter_time
+                key, start, end, tri_path, di_real_path, tri_judge, data_mid.arrow_segments,
+                pad_enter_time, data_mid.critical_proportion
             )
 
 
@@ -831,27 +882,31 @@ def init():
 
 if __name__ == "__main__":
     init()
-    print(len(SlideInfo._entries))
-    # for key, info in WifiInfo._entries.items():
-    #     print(info.pad_enter_time[-1])
-    import pygame
-    pygame.init()
-    screen = pygame.display.set_mode([540, 540])
-    screen.blit(pygame.image.load("images/background/Default_Background.png").convert_alpha(), (0, 0))
-    for info in SlideInfo._entries.values():
-        if info.type_ != SlideType.BigCurve_CCW and info.type_ != SlideType.BigCurve_CW:
-            continue
-        points = []
-        for i in range(10000):
-            c = info.path.point(i / 10000) + complex(270, 270)
-            points.append((c.real, c.imag))
-        pygame.draw.aalines(screen, [0, 233, 255], False, points)
-        pygame.display.flip()
-    pygame.image.save(screen, "dummy/slide_only_ppqq.png")
-    running = True
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+    print((1 - SlideInfo.get("1pp8").pad_enter_time[-1].t) * SlideInfo.get("1pp8").path.length())
+    print((1 - SlideInfo.get("1-7").pad_enter_time[-1].t) * SlideInfo.get("1-7").path.length())
+    # print(len(SlideInfo._entries))
+    # for key in sorted(SlideInfo._entries.keys()):
+    #     if key[0] != "1":
+    #         continue
+    #     print(key, round(1 - SlideInfo.get(key).pad_enter_time[-1][1], 6))
+    # import pygame
+    # pygame.init()
+    # screen = pygame.display.set_mode([540, 540])
+    # screen.blit(pygame.image.load("images/background/Default_Background.png").convert_alpha(), (0, 0))
+    # for info in SlideInfo._entries.values():
+    #     if info.type_ != SlideType.BigCurve_CCW and info.type_ != SlideType.BigCurve_CW:
+    #         continue
+    #     points = []
+    #     for i in range(10000):
+    #         c = info.path.point(i / 10000) + complex(270, 270)
+    #         points.append((c.real, c.imag))
+    #     pygame.draw.aalines(screen, [0, 233, 255], False, points)
+    #     pygame.display.flip()
+    # pygame.image.save(screen, "dummy/slide_only_ppqq.png")
+    # running = True
+    # while running:
+    #     for event in pygame.event.get():
+    #         if event.type == pygame.QUIT:
+    #             running = False
 
 
