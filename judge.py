@@ -100,7 +100,7 @@ class StaticMuriChecker:
                     # 区间右端点取两者更晚：进入下一个区 / 进入当前区+200ms
                     # 但是因为我不能确定“下一个区”，所以只取 进入当前区+200ms
                     end = enter_moment + COLLIDE_THRESHOLD
-                    collide_entries.append((p, t, start, end))
+                    collide_entries.append((p, enter_moment, start, end))
 
             for note in non_slides:
                 if not isinstance(note, SimaiTap | SimaiHold):
@@ -165,8 +165,7 @@ class StaticMuriChecker:
                         ):
                             muri_records.append(cls._overlap_record(note, note2))
 
-
-        for record in muri_records:
+        for record in sorted(muri_records, key=(lambda x: (x["affected"]["line"], x["affected"]["col"]))):
             if record["type"] == "Overlap":
                 msg = "叠键无理：\"{note}\"(L{line},C{col}) 与 ".format_map(record["affected"])
                 msg += "\"{note}\"(L{line},C{col}) 重叠".format_map(record["cause"])
