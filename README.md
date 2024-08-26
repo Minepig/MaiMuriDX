@@ -2,7 +2,7 @@
 
 Next-generation muri detector for simai, supports DX charts.
 
-支持DX谱面的maimai自制谱无理检测器，可检测包含内屏无理在内的所有类型无理配置并给出报告。
+支持 DX 谱面的 Maimai 自制谱无理检测器，可检测包含内屏无理在内的所有类型无理配置并给出报告。
 
 ## 使用教程
 
@@ -72,6 +72,42 @@ Next-generation muri detector for simai, supports DX charts.
 - 2:19 的第 36.33 帧，第 70 行第 97 列的 `5` 在正解**之前** 18.50 ms，被第 70 行第 84 列的 `1<5[8:1]` 蹭到了。
 
 在程序采用渲染模式运行且电脑性能较差时，可能会误报叠键无理，可以根据报告行末的时间差判断（真叠键一般都大于 150 ms，如果只有 50 ms 的话应该只是电脑卡了）
+
+## 调整程序设置: `config.json`
+
+程序根目录下的 `config.json` 存放了 MaiMuriDX 的运行参数，如果 `config.json` 文件不存在，运行时会自动创建一个默认版本：
+
+```json
+{
+    "hand_radius_max": 180,
+    "hand_radius_wifi": 100,
+    "hand_radius_normal": 40,
+    "distance_merge_slide": 20,
+    "delta_tangent_merge_slide": 3,
+    "tap_on_slide_threshold": 0.3333,
+    "touch_on_slide_threshold": 8,
+    "overlay_threshold": 2,
+    "collide_threshold": 12,
+    "extra_paddown_delay": 3,
+    "release_delay": 1.3333,
+    "wifi_need_c": false
+}
+```
+
+各项参数含义如下：
+
+- `hand_radius_max` 是处理 TouchGroup 时允许的单手最大半径，单位是像素，在官方框体上 100 px ≈ 5 cm；
+- `hand_radius_wifi` 是处理 Wifi 时的手的半径，单位是像素；
+- `hand_radius_normal` 是处理所有其他配置时的手的半径，单位是像素；
+- `distance_merge_slide` 是允许两条 Slide 动作合并的最大距离，单位是像素；
+- `delta_tangent_merge_slide` 是允许两条 Slide 动作合并的最大夹角，单位是度；
+- `tap_on_slide_threshold` 是将 Tap 识别为拍划配置的时间阈值，单位是帧 (60 FPS)；
+- `touch_on_slide_threshold` 是 Slide 撞 Touch 的时间阈值，单位是帧；
+- `overlay_threshold` 是静态检查时识别叠键的时间阈值，单位是帧；
+- `collide_threshold` 是静态检查时识别撞尾的时间阈值，单位是帧；
+- `extra_paddown_delay` 是动态检查时应该在 Slide 启动后重复触发 A 区的延迟，用以模拟外键无理，单位是帧
+- `release_delay` 是动态检查时每个动作的松手延迟，单位是帧；
+- `wifi_need_c` 是开启模拟旧框 Wifi 的 C 区抬手判的开关，填 `true` 或 `false`。
 
 ## 命令行接口
 
