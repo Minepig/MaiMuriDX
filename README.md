@@ -83,3 +83,6 @@ MaiMuriDX 使用 Python 编写，所以只要你有对应平台的 Python 解释
 
 > 我寻思 MajdataEdit 也只能在 Windows 上运行吧……真有跨平台需求吗？
 
+## 友情链接
+
+- [MajdataView](https://github.com/LingFeng-bbben/MajdataView)
