@@ -1,7 +1,7 @@
 import random
 from typing import Sequence
 
-from core import HAND_RADIUS_MAX, Pad, JUDGE_TPS, TOUCH_ON_SLIDE_THRESHOLD, TAP_ON_SLIDE_THRESHOLD, \
+from core import HAND_RADIUS_MAX, Pad, JUDGE_TPS, TOUCH_ON_SLIDE_THRESHOLD, TAP_ON_SLIDE_THRESHOLD, REPORT_WRITER, \
     HAND_RADIUS_NORMAL, HAND_RADIUS_WIFI, EXTRA_PADDOWN_DELAY, DISTANCE_MERGE_SLIDE, DELTA_TANGENT_MERGE_SLIDE
 from slides import SlideInfo
 from simai import SimaiTap, SimaiHold, SimaiTouch, SimaiTouchHold, SimaiTouchGroup, \
@@ -98,7 +98,7 @@ class SimaiParser:
     def _parse_slide_note(cls, cursor: tuple[int, int, str], slide_str: str, now: float, bpm: float) -> list[SimaiNote]:
         # slide_str always contains one slide, but it can be a slide chain
         if "[" not in slide_str or "]" not in slide_str:
-            print("L:", cursor[0], "C:", cursor[1], "Invalid slide:", slide_str, "duration not found")
+            REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid slide:", slide_str, "duration not found")
             return []
 
         if "w" in slide_str:
@@ -110,15 +110,15 @@ class SimaiParser:
             should_not_contain_digit = slide_str[1:idx] + slide_str[idx+2:idx2] + slide_str[idx3+1:]
             if any(map(lambda c: c in should_not_contain_digit, "12345678")):
                 # digit before "w" -> try to chain wifi
-                print("L:", cursor[0], "C:", cursor[1], "Invalid wifi slide:", slide_str,
-                      "wifi slide does not support chaining yet")
+                REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid wifi slide:", slide_str,
+                                      "wifi slide does not support chaining yet")
 
             shape = slide_str[0] + slide_str[idx:idx+2]  # delete star tap properties (such as 1bxw5)
             signature = slide_str[idx2+1:idx3]
             try:
                 wait, duration = cls._parse_slide_wait_and_duration(signature, bpm)
             except ValueError as e:
-                print("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str, e)
+                REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str, e)
                 return []
             return [SimaiWifi(cursor, now, shape, wait, duration)]
 
@@ -134,7 +134,7 @@ class SimaiParser:
                 # time signature
                 if not shape_found:
                     # time signature at start
-                    print("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str)
+                    REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str)
                     return []
 
                 shape_found = False
@@ -148,7 +148,7 @@ class SimaiParser:
                     signature_state = 3
                 elif signature_state == 3:
                     # new signature after last signature (total duration)
-                    print("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str)
+                    REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str)
                     return []
 
                 signature = ""
@@ -159,7 +159,7 @@ class SimaiParser:
                 try:
                     wait, duration = cls._parse_slide_wait_and_duration(signature, bpm)
                 except ValueError as e:
-                    print("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str, e)
+                    REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str, e)
                     return []
                 wait_and_durations.append((wait, duration))
 
@@ -167,7 +167,7 @@ class SimaiParser:
                 # shape command
                 if signature_state == 3:
                     # additional segment after total time signature
-                    print("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str)
+                    REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str)
                     return []
 
                 if shape_found:
@@ -179,7 +179,7 @@ class SimaiParser:
 
                     elif signature_state == 2:
                         # missing time signature in individual durations case
-                        print("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str)
+                        REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str)
                         return []
 
                 shape_found = True
@@ -210,7 +210,7 @@ class SimaiParser:
             try:
                 SlideInfo.get(shape)
             except KeyError:
-                print("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str, "unknown shape", shape)
+                REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str, "unknown shape", shape)
                 return []
 
         wait = wait_and_durations[0][0]
@@ -221,7 +221,7 @@ class SimaiParser:
             return [SimaiSlideChain(cursor, now, shapes, wait, total_duration=wait_and_durations[0][1])]
 
         # should not arrive here
-        print("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str)
+        REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", slide_str)
         return []
 
     @classmethod
@@ -252,7 +252,7 @@ class SimaiParser:
                 try:
                     duration = cls._parse_hold_duration(signature, bpm)
                 except ValueError as e:
-                    print("L:", cursor[0], "C:", cursor[1], "Invalid note:", note_str, e)
+                    REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", note_str, e)
                     return []
                 return [SimaiTouchHold(cursor, now, pad_str, duration)]
 
@@ -260,7 +260,7 @@ class SimaiParser:
             return [SimaiTouch(cursor, now, pad_str)]
 
         if note_str[0] not in "12345678":
-            print("L:", cursor[0], "C:", cursor[1], "Invalid note:", note_str)
+            REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", note_str)
             return []
 
         pos = int(note_str[0])
@@ -298,7 +298,7 @@ class SimaiParser:
             try:
                 duration = cls._parse_hold_duration(signature, bpm)
             except ValueError as e:
-                print("L:", cursor[0], "C:", cursor[1], "Invalid note:", note_str, e)
+                REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", note_str, e)
                 return []
             return [SimaiHold(cursor, now, pos, duration)]
 
@@ -390,7 +390,7 @@ class SimaiParser:
                     try:
                         bpm = float(temp)
                     except ValueError:
-                        print("L:", lineno, "C:", column, "Invalid bpm:", temp)
+                        REPORT_WRITER.writeln("L:", lineno, "C:", column, "Invalid bpm:", temp)
                     continue
 
                 if ch == "{":
@@ -405,7 +405,7 @@ class SimaiParser:
                     try:
                         beats = int(temp)
                     except ValueError:
-                        print("L:", lineno, "C:", column, "Invalid beats:", temp)
+                        REPORT_WRITER.writeln("L:", lineno, "C:", column, "Invalid beats:", temp)
                     continue
 
                 if ch == "H" and (column + 2) < length and line[column + 1] == "S" and line[column + 2] == "*":
@@ -441,7 +441,7 @@ class SimaiParser:
                 if have_note:
                     current_note += ch
                 else:
-                    print("L:", lineno, "C:", column, "Invalid symbol:", ch)
+                    REPORT_WRITER.writeln("L:", lineno, "C:", column, "Invalid symbol:", ch)
 
         cls._post_parse_workup(result)
         result.sort(key=lambda x: x.moment)

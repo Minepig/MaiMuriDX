@@ -1,6 +1,6 @@
 from math import sin, cos, radians
 from enum import Enum
-import json, pathlib
+import json, pathlib, io
 
 # ==================== Constants Definition ====================
 # Geometry definitions
@@ -42,7 +42,9 @@ SLIDE_DELTA_SHIFT = JUDGE_TPF * 3   # SEGA似乎把Slide判定往前移了3帧
 # slides accept judging some time earlier than slide star should be hit
 # 6 frames (100ms) here, but maybe it's 3 frames?
 # True, it's 3 frames.
-SLIDE_LEADING = JUDGE_TPF * 3   # 星星入判
+# Update: well actually there is a 50 ms input delay, so 6 frames, again.
+# but we have a release delay of 1.33 frame, so I make this argument 5 frames, lol.
+SLIDE_LEADING = JUDGE_TPF * 5   # 星星入判
 
 # Rendering definitions
 RENDER_FPS = 60
@@ -59,12 +61,12 @@ if not config_path.exists():
             "hand_radius_normal": 40,
             "distance_merge_slide": 20,
             "delta_tangent_merge_slide": 3,
-            "tap_on_slide_threshold": 1/JUDGE_TPF,
+            "tap_on_slide_threshold": round(1/JUDGE_TPF, 4),
             "touch_on_slide_threshold": 8,
             "overlay_threshold": 2,
             "collide_threshold": 12,
             "extra_paddown_delay": 3,
-            "release_delay": 1+1/JUDGE_TPF,
+            "release_delay": 1 + round(1/JUDGE_TPF, 4),
             "wifi_need_c": False,
         }
         json.dump(obj, f, indent=4)
@@ -264,8 +266,23 @@ class Pad(Enum):
         return i2 == ((i1+1) & 0b111) or i2 == i1
 
 
+class ReportWriter:
+    def __init__(self):
+        self.buf = io.StringIO()
 
+    def dump(self, file) -> None:
+        lines = self.buf.getvalue().splitlines()
+        for line in lines:
+            print(line, file=file)
 
+    def writeln(self, *args, **kw):
+        print(*args, **kw)
+        print(*args, **kw, file=self.buf)
+
+    def writeln_no_stdout(self, *args, **kw):
+        print(*args, **kw, file=self.buf)
+
+REPORT_WRITER = ReportWriter()
 
 
 if __name__ == "__main__":

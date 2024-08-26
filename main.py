@@ -1,9 +1,9 @@
 import pathlib
+import traceback
 from collections.abc import Sequence
-from traceback import print_exc
 
 from action import Action, ActionSlide
-from core import CANVAS_CENTER, CANVAS_SIZE, Pad, JUDGE_TPS, RENDER_FPS
+from core import CANVAS_CENTER, CANVAS_SIZE, Pad, JUDGE_TPS, RENDER_FPS, REPORT_WRITER
 from judge import JudgeManager, StaticMuriChecker
 from majparse import NoteActionConverter, SimaiParser
 from render import EffectRenderer, NoteRenderer, PressEffect, SlideJudgeEffect, SimpleJudgeEffect
@@ -144,35 +144,19 @@ class Game:
                     else:
                         pg.mixer.music.unpause()
 
-                elif event.key == pg.K_RIGHT and self.pause:
-                    pg.mixer.music.set_pos(1 / JUDGE_TPS)
-                    this_frame_touch_points, hand_count, finished_notes = self.judge_manager.tick(1)
-
-                    for note in finished_notes:
-                        self.renderer.note_renderer.generate_judge_effect(note, self.renderer.effect_renderer)
-
-                    for note in self.judge_manager.active_notes:
-                        if isinstance(note, SimaiTouchGroup):
-                            self.renderer.note_renderer.generate_judge_effect(note, self.renderer.effect_renderer)
-
-                    for c, r, t, action in this_frame_touch_points:
-                        flag = isinstance(action, ActionSlide)
-                        self.renderer.action_renderer.add_effect(
-                            PressEffect(self.judge_manager.timer, c, r, flag, hand_count > 2))
-
     def load_chart(self, chart: list[SimaiNote]):
         actions = NoteActionConverter.generate_action(chart)
         self.judge_manager.load_chart(chart, actions)
 
     def run_no_render(self):
-        print("========== 静态检查 ==========")
+        REPORT_WRITER.writeln("========== 静态检查 ==========")
         entries = StaticMuriChecker.check(self.judge_manager.note_sequence)
-        print()
-        print("========== 动态检查 ==========")
+        REPORT_WRITER.writeln()
+        REPORT_WRITER.writeln("========== 动态检查 ==========")
         total = len(self.judge_manager.note_sequence)
         while self.judge_manager.note_pointer < total or len(self.judge_manager.active_notes) > 0:
             self.judge_manager.tick(1)
-        print()
+        REPORT_WRITER.writeln()
         counter = [0, 0, 0, 0, 0, 0, 0, 0]
         for record in entries:
             if record["type"] == "Overlap":
@@ -192,65 +176,53 @@ class Game:
                 counter[3] += 1
             elif record["type"] == "SlideTooFast":
                 counter[5] += 1
-        print(("检测完成，静态检查共发现 %d 个叠键无理、%d 个外键无理、%d 个撞尾无理，" +
-              "动态检查共发现 %d 个多押无理、%d 个叠键无理、%d 个内屏无理、%d 个外键无理、%d 个撞尾无理")
-              % tuple(counter))
+        REPORT_WRITER.writeln(("检测完成，静态检查共发现 %d 个叠键无理、%d 个外键无理、%d 个撞尾无理，" +
+                               "动态检查共发现 %d 个多押无理、%d 个叠键无理、%d 个内屏无理、%d 个外键无理、%d 个撞尾无理")
+                               % tuple(counter))
 
     def run(self):
-        print("========== 静态检查 ==========")
+        REPORT_WRITER.writeln("========== 静态检查 ==========")
         entries = StaticMuriChecker.check(self.judge_manager.note_sequence)
-        print()
-        print("========== 动态检查 ==========")
-        print("请在 pygame 窗口中按空格开始检查 ...")
+        REPORT_WRITER.writeln()
+        REPORT_WRITER.writeln("========== 动态检查 ==========")
+        REPORT_WRITER.writeln("请在弹出的 pygame 窗口中按空格开始播放谱面并检查 ...")
         self.last_frame_ms = self.timer_ms = pg.time.get_ticks()
         while self.running:
-            try:
-                self.event_loop()
+            self.event_loop()
 
-                self.clock.tick(200)
-                timer_new = pg.time.get_ticks()
-                elapsed_ticks = (timer_new - self.timer_ms) * JUDGE_TPS / 1000
-                # print(elapsed_ticks)
-                self.timer_ms = timer_new
-                if self.judge_manager.timer < 0 and self.judge_manager.timer + elapsed_ticks > 0:
-                    pg.mixer.music.play()
-                    pass
+            self.clock.tick(200)
+            timer_new = pg.time.get_ticks()
+            elapsed_ticks = (timer_new - self.timer_ms) * JUDGE_TPS / 1000
+            # print(elapsed_ticks)
+            self.timer_ms = timer_new
+            if self.judge_manager.timer < 0 and self.judge_manager.timer + elapsed_ticks > 0:
+                pg.mixer.music.play()
+                pass
 
-                if not self.pause:
-                    this_frame_touch_points, hand_count, finished_notes = self.judge_manager.tick(elapsed_ticks)
+            if not self.pause:
+                this_frame_touch_points, hand_count, finished_notes = self.judge_manager.tick(elapsed_ticks)
 
-                    for note in finished_notes:
+                for note in finished_notes:
+                    self.renderer.note_renderer.generate_judge_effect(note, self.renderer.effect_renderer)
+                for note in self.judge_manager.active_notes:
+                    if isinstance(note, SimaiTouchGroup):
                         self.renderer.note_renderer.generate_judge_effect(note, self.renderer.effect_renderer)
-                        # if note.judge == JudgeResult.Bad:
-                        #     self.pause = True
-                        #     pg.mixer.music.pause()
 
-                    for note in self.judge_manager.active_notes:
-                        if isinstance(note, SimaiTouchGroup):
-                            self.renderer.note_renderer.generate_judge_effect(note, self.renderer.effect_renderer)
+                for c, r, t, action in this_frame_touch_points:
+                    flag = isinstance(action, ActionSlide)
+                    self.renderer.action_renderer.add_effect(PressEffect(self.judge_manager.timer, c, r, flag, hand_count > 2))
 
-                    for c, r, t, action in this_frame_touch_points:
-                        flag = isinstance(action, ActionSlide)
-                        self.renderer.action_renderer.add_effect(PressEffect(self.judge_manager.timer, c, r, flag, hand_count > 2))
+            if timer_new - self.last_frame_ms >= 1000 / RENDER_FPS:
+                self.renderer.clear_canvas()
+                self.renderer.render_active_notes(self.judge_manager.active_notes, self.judge_manager.timer)
+                self.renderer.render_active_actions(self.judge_manager.active_actions, self.judge_manager.timer)
+                self.renderer.render_pad_state(self.judge_manager.pad_states)
+                self.renderer.render_effect(self.judge_manager.timer)
+                self.renderer.render_time(self.judge_manager.timer / JUDGE_TPS, self.clock.get_fps())
+                self.renderer.render_all_layers()
+                self.last_frame_ms = timer_new
 
-                    # if self.judge_manager.timer > 47 * 180:
-                    #     pg.mixer.music.pause()
-                    #     self.pause = True
-
-                if timer_new - self.last_frame_ms >= 1000 / RENDER_FPS:
-                    self.renderer.clear_canvas()
-                    self.renderer.render_active_notes(self.judge_manager.active_notes, self.judge_manager.timer)
-                    self.renderer.render_active_actions(self.judge_manager.active_actions, self.judge_manager.timer)
-                    self.renderer.render_pad_state(self.judge_manager.pad_states)
-                    self.renderer.render_effect(self.judge_manager.timer)
-                    self.renderer.render_time(self.judge_manager.timer / JUDGE_TPS, self.clock.get_fps())
-                    self.renderer.render_all_layers()
-                    self.last_frame_ms = timer_new
-            except Exception as e:
-                # print_exc()
-                raise e
-
-        print()
+        REPORT_WRITER.writeln()
         counter = [0, 0, 0, 0, 0, 0, 0, 0]
         for record in entries:
             if record["type"] == "Overlap":
@@ -270,15 +242,16 @@ class Game:
                 counter[3] += 1
             elif record["type"] == "SlideTooFast":
                 counter[5] += 1
-        print(("检测完成，静态检查共发现 %d 个叠键无理、%d 个外键无理、%d 个撞尾无理，" +
-               "动态检查共发现 %d 个多押无理、%d 个叠键无理、%d 个内屏无理、%d 个外键无理、%d 个撞尾无理")
-              % tuple(counter))
+        REPORT_WRITER.writeln(("检测完成，静态检查共发现 %d 个叠键无理、%d 个外键无理、%d 个撞尾无理，" +
+                               "动态检查共发现 %d 个多押无理、%d 个叠键无理、%d 个内屏无理、%d 个外键无理、%d 个撞尾无理")
+                               % tuple(counter))
 
 
 
 
 if __name__ == "__main__":
-    path_to_chart = pathlib.Path(input("输入谱面文件路径: "))
+    print("输入谱面文件路径: ")
+    path_to_chart = pathlib.Path(input())
     if path_to_chart.is_dir():
         path_to_chart = path_to_chart / "maidata.txt"
     path_to_track = path_to_chart.parent / "track.mp3"
@@ -302,14 +275,40 @@ if __name__ == "__main__":
                 charts[x] = command[8:]
 
     print("可用难度:", ", ".join(charts.keys()))
-    d = input("输入难度: ")
+    d = input("请输入难度: ")
     chart_str = charts[d]
-    flag = bool(input("是否关闭渲染？(不输入任何内容即为否)"))
+    flag = bool(input("是否关闭渲染？(不输入任何内容即为否) "))
 
-    game = Game(flag)
-    game.load_chart(SimaiParser.parse_simai_chart(chart_str, first))
-    if flag:
-        game.run_no_render()
-    else:
-        game.run()
-    pg.quit()
+    try:
+        REPORT_WRITER.writeln_no_stdout("谱面文件：%s\n难度：%s\n" % (path_to_chart, d))
+        game = Game(flag)
+        chart = SimaiParser.parse_simai_chart(chart_str, first)
+        game.load_chart(chart)
+        REPORT_WRITER.writeln("谱面加载完成，共%d个note" % len(chart))
+        if flag:
+            game.run_no_render()
+        else:
+            game.run()
+        pg.quit()
+    except Exception:
+        traceback.print_exc()
+        REPORT_WRITER.writeln(traceback.format_exc())
+
+    saving = True
+    while saving:
+        print("是否保存到文件？请输入输出文件路径，否则不保存")
+        output_path = input()
+        if output_path:
+            output_path = pathlib.Path(output_path)
+            if output_path.suffix == "":
+                output_path = output_path.with_suffix(".txt")
+            if output_path.exists():
+                flag = bool(input('"%s" 已经存在，是否覆盖？(不输入任何内容即为否) ' % output_path))
+            else:
+                flag = True
+            if flag:
+                with output_path.open("w", encoding="utf-8") as f:
+                    REPORT_WRITER.dump(f)
+                saving = False
+        else:
+            saving = False
