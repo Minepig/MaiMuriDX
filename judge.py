@@ -1,7 +1,8 @@
 from typing import NamedTuple
 from collections.abc import Sequence, Iterable
 
-from core import JUDGE_TPF, JUDGE_TPS, DISTANCE_MERGE_SLIDE, DELTA_TANGENT_MERGE_SLIDE, JudgeResult, Pad
+from core import JudgeResult, Pad, REPORT_WRITER
+from core import JUDGE_TPF, JUDGE_TPS, DISTANCE_MERGE_SLIDE, DELTA_TANGENT_MERGE_SLIDE
 from core import OVERLAY_THRESHOLD, COLLIDE_EXTRA_DELTA, TAP_ON_SLIDE_THRESHOLD, COLLIDE_THRESHOLD
 from action import ActionExtraPadDown
 from simai import SimaiNote, SimaiSlideChain, SimaiWifi, SimaiTap, SimaiHold, SimaiTouch, SimaiTouchHold, SimaiTouchGroup
@@ -72,72 +73,81 @@ class StaticMuriChecker:
     @classmethod
     def check(cls, note_sequence: Sequence[SimaiNote]):
         muri_records = []
-        for i, note in enumerate(cls._flatten_touch_group(note_sequence)):
-            for j, note2 in enumerate(cls._flatten_touch_group(note_sequence)):
+
+        # 拆分note序列
+        slides = []
+        wifis = []
+        non_slides = []
+        for note in cls._flatten_touch_group(note_sequence):
+            if isinstance(note, SimaiSlideChain):
+                slides.append(note)
+            elif isinstance(note, SimaiWifi):
+                wifis.append(note)
+            else:
+                non_slides.append(note)
+
+        # 外无、撞尾检测
+        for slide in slides:
+            # 首先产生路径上每一个A区的检查区间
+            collide_entries = []
+            for info, duration, moment in zip(slide.segment_infos, slide.durations, slide.segment_shoot_moments):
+                for p, t in info.pad_enter_time:
+                    if not p.is_group_a():
+                        continue
+                    enter_moment = moment + t * duration
+                    # 区间左端点取进入当前区-50ms，但不要早于星星启动
+                    start = max(enter_moment - COLLIDE_EXTRA_DELTA, slide.shoot_moment + TAP_ON_SLIDE_THRESHOLD)
+                    # 区间右端点取两者更晚：进入下一个区 / 进入当前区+200ms
+                    # 但是因为我不能确定“下一个区”，所以只取 进入当前区+200ms
+                    end = enter_moment + COLLIDE_THRESHOLD
+                    collide_entries.append((p, t, start, end))
+
+            for note in non_slides:
+                if not isinstance(note, SimaiTap | SimaiHold):
+                    continue    # 筛掉 touch
+
+                if note.moment < slide.shoot_moment or note.moment > slide.end_moment + COLLIDE_THRESHOLD:
+                    continue    # 筛掉打击时刻不在 slide 范围内的
+
+                # 先查第一个区的外无
+                if note.idx == slide.start and TAP_ON_SLIDE_THRESHOLD <= note.moment - slide.shoot_moment <= COLLIDE_THRESHOLD:
+                    muri_records.append(cls._slide_head_tap_record(note, slide, slide.shoot_moment - note.moment))
+
+                # 逐个区域检查
+                for pad, moment, start, end in collide_entries:
+                    if pad == note.pad and start <= note.moment <= end:
+                        muri_records.append(cls._tap_on_slide_record(note, slide, moment - note.moment))
+
+                # 对于最后一个区，区间尾额外延长到星星结束+50ms
+                if note.pad == Pad(slide.end % 8) and \
+                        slide.critical_moment + COLLIDE_THRESHOLD < note.moment <= slide.end_moment + COLLIDE_EXTRA_DELTA:
+                    muri_records.append(cls._tap_on_slide_record(note, slide, slide.critical_moment - note.moment))
+
+        for wifi in wifis:
+            for note in non_slides:
+                if not isinstance(note, SimaiTap | SimaiHold):
+                    continue    # 筛掉 touch
+
+                if note.moment < wifi.shoot_moment or note.moment > wifi.end_moment + COLLIDE_THRESHOLD:
+                    continue    # 筛掉打击时刻不在 slide 范围内的
+
+                # 偷个懒，wifi其实只需要查头尾
+                if wifi.start == note.idx and TAP_ON_SLIDE_THRESHOLD <= note.moment - wifi.shoot_moment <= COLLIDE_THRESHOLD:
+                    muri_records.append(cls._slide_head_tap_record(note, wifi, wifi.shoot_moment - note.moment))
+
+                if note.idx % 8 in (wifi.end % 8, (wifi.end + 1) % 8, (wifi.end - 1) % 8):
+                    start = max(wifi.critical_moment - COLLIDE_EXTRA_DELTA, wifi.shoot_moment + TAP_ON_SLIDE_THRESHOLD)
+                    end = max(wifi.critical_moment + COLLIDE_THRESHOLD, wifi.end_moment + COLLIDE_EXTRA_DELTA)
+                    if start <= note.moment <= end:
+                        muri_records.append(cls._tap_on_slide_record(note, wifi, wifi.critical_moment - note.moment))
+
+        # 叠键检测
+        for i, note in enumerate(non_slides):
+            for j, note2 in enumerate(non_slides):
                 if note is note2:
                     continue
 
-                if isinstance(note, SimaiSlideChain):
-                    if isinstance(note2, SimaiTap | SimaiHold):
-                        if note2.moment < note.shoot_moment or \
-                                note2.moment > note.end_moment + COLLIDE_THRESHOLD:
-                            continue  # 简单剪个枝
-
-                        # TODO
-                        # 这里有一个问题，SlideInfo里记录的进入时刻并不满足顺序关系，因为会有OR判定区之类的东西
-                        # 1pp6 和 wifi 受到的影响最大，任何含1-3形状的也有一些影响
-                        # 摆烂了，我选择只检查 进入A区±200ms 的撞尾
-
-                        # 首先查第一个区的外无
-                        if note2.pad == Pad(note.start % 8) and \
-                                TAP_ON_SLIDE_THRESHOLD <= note2.moment - note.shoot_moment <= COLLIDE_THRESHOLD:
-                            muri_records.append(cls._slide_head_tap_record(note2, note, note2.moment - note.shoot_moment))
-                        # 逐段检查，逐个区检查
-                        for info, duration, moment in zip(note.segment_infos, note.durations,
-                                                          note.segment_shoot_moments):
-                            for p, t in info.pad_enter_time:
-                                if p != note2.pad:
-                                    continue
-
-                                enter_moment = moment + t * duration
-                                # 区间左端点取进入当前区-50ms，但不要早于星星启动
-                                start = max(enter_moment - COLLIDE_EXTRA_DELTA,
-                                            note.shoot_moment + TAP_ON_SLIDE_THRESHOLD)
-                                # 区间右端点取两者更晚：进入下一个区 / 进入当前区+200ms
-                                # 因为我不能确定“下一个区”，所以只取 进入当前区+200ms
-                                end = enter_moment + COLLIDE_THRESHOLD
-                                if start <= note2.moment <= end:
-                                    muri_records.append(cls._tap_on_slide_record(note2, note, note2.moment - enter_moment))
-                        # 对于最后一个区，区间尾额外延长到星星结束+50ms
-                        if note2.pad == Pad(note.end % 8) and \
-                                note.critical_moment + COLLIDE_THRESHOLD < note2.moment <= note.end_moment + COLLIDE_EXTRA_DELTA:
-                            muri_records.append(cls._tap_on_slide_record(note2, note, note2.moment - note.critical_moment))
-
-                    # 摆烂了，不查slide和touch叠键了，交给动态检测
-                    # elif isinstance(note2, SimaiTouch | SimaiTouchHold):
-                    #     for idx, (pad, moment) in enumerate(enter_moments[:-1]):
-                    #         if pad != note2.pad:
-                    #             continue
-                    #         if (moment + TOUCH_ON_SLIDE_THRESHOLD
-                    #                 <= note2.moment <= enter_moments[idx+1][1] - TOUCH_ON_SLIDE_THRESHOLD):
-                    #             muri_records.append(cls._overlap_record(note2, note))
-
-                elif isinstance(note, SimaiWifi):
-                    if isinstance(note2, SimaiTap | SimaiHold):
-                        if note2.moment < note.shoot_moment or note2.moment > note.end_moment + COLLIDE_THRESHOLD:
-                            continue
-                    # 偷个懒，wifi其实只需要查头尾
-                    if isinstance(note2, SimaiTap | SimaiHold):
-                        if note.start % 8 == note2.idx % 8 and \
-                                TAP_ON_SLIDE_THRESHOLD <= note2.moment - note.shoot_moment <= COLLIDE_THRESHOLD:
-                            muri_records.append(cls._slide_head_tap_record(note2, note, note2.moment - note.shoot_moment))
-                        elif note2.idx % 8 in (note.end % 8, (note.end + 1) % 8, (note.end - 1) % 8):
-                            start = note.critical_moment - COLLIDE_EXTRA_DELTA
-                            end = max(note.critical_moment + COLLIDE_THRESHOLD, note.end_moment + COLLIDE_EXTRA_DELTA)
-                            if start <= note2.moment <= end:
-                                muri_records.append(cls._tap_on_slide_record(note2, note, note2.moment - note.critical_moment))
-
-                elif isinstance(note, SimaiTap | SimaiTouch):
+                if isinstance(note, SimaiTap | SimaiTouch):
                     if isinstance(note2, SimaiTap | SimaiTouch):
                         if i < j and note.pad == note2.pad and abs(note.moment - note2.moment) <= OVERLAY_THRESHOLD:
                             muri_records.append(cls._overlap_record(note, note2))
@@ -160,17 +170,17 @@ class StaticMuriChecker:
             if record["type"] == "Overlap":
                 msg = "叠键无理：\"{note}\"(L{line},C{col}) 与 ".format_map(record["affected"])
                 msg += "\"{note}\"(L{line},C{col}) 重叠".format_map(record["cause"])
-                print(msg)
+                REPORT_WRITER.writeln(msg)
             elif record["type"] == "SlideHeadTap":
                 msg = "外键无理：\"{note}\"(L{line},C{col}) 可能被 ".format_map(record["affected"])
                 msg += "\"{note}\"(L{line},C{col}) 蹭到 ".format_map(record["cause"])
                 msg += "(%+.2f ms)" % (record["delta"] * 1000 / JUDGE_TPS)
-                print(msg)
+                REPORT_WRITER.writeln(msg)
             elif record["type"] == "TapOnSlide":
                 msg = "撞尾无理：\"{note}\"(L{line},C{col}) 可能被 ".format_map(record["affected"])
                 msg += "\"{note}\"(L{line},C{col}) 蹭到 ".format_map(record["cause"])
                 msg += "(%+.2f ms)" % (record["delta"] * 1000 / JUDGE_TPS)
-                print(msg)
+                REPORT_WRITER.writeln(msg)
 
         return muri_records
 
@@ -313,7 +323,7 @@ class JudgeManager:
                 msg = "[%02d:%02dF%05.2f] 多押无理：" % (m, s, f)
                 msg += "下列note可能形成了%d押\n    " % hand_count
                 msg += " ".join("\"{2}\"(L{0},C{1})".format(*n) for n in sorted(affected_cursors))
-                print(msg)
+                REPORT_WRITER.writeln(msg)
 
         # 产生pad down与pad up事件
         # pad up目前只在slide判定中作为参考
@@ -410,7 +420,7 @@ class JudgeManager:
                                 "%+.2f" % ((t - note.end_moment) * 1000 / JUDGE_TPS),
                             )
                     self.muri_record_list.append(record)
-                    print(msg)
+                    REPORT_WRITER.writeln(msg)
 
                 elif isinstance(note, SimaiWifi):
                     record = {
@@ -467,7 +477,7 @@ class JudgeManager:
                                     "%+.2f" % ((t - note.end_moment) * 1000 / JUDGE_TPS),
                                 )
                     self.muri_record_list.append(record)
-                    print(msg)
+                    REPORT_WRITER.writeln(msg)
 
                 else:
                     # 不是星星，那有可能是tap/hold提前蹭绿(fast)，或者叠键导致没判上(late)
@@ -504,7 +514,7 @@ class JudgeManager:
                         msg = "[%02d:%05.2f] 叠键无理：" % (int(m), s)
                         msg += "\"{2}\"(L{0},C{1}) 似乎与另一个note重叠".format(*note.cursor)
                         msg += "(%+.2f ms)" % ((note.judge_moment - note.moment) * 1000 / JUDGE_TPS)
-                    print(msg)
+                    REPORT_WRITER.writeln(msg)
 
         return this_frame_touch_points, hand_count, finished_notes
 
