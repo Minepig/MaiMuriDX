@@ -375,16 +375,7 @@ class JudgeManager:
                     msg = "[%02d:%02dF%05.2f] 内屏无理：" % (m, s, f)
                     msg += "\"{2}\"(L{0},C{1}) 被提前蹭掉，相关判定区如下".format(*note.cursor)
 
-                    # 首先找到现在slide应当处理到哪个区
-                    idx = note.get_segment_idx(self.timer)
-                    p = (self.timer - note.segment_shoot_moments[idx]) / note.durations[idx]
-                    if p < 0:
-                        p = 0
-                    # 我们假装每一段slide的判定区都是等距分布的，反正这里只是估算就够
-                    area_idx = int(len(note.segment_infos[idx].judge_sequence) * p) + note.segment_idx_bias[idx]
-
-                    # 我们关心从此时slide应当处理到的判定区起，一直到结尾的所有判定区都是怎么被按掉的
-                    for i in range(area_idx, note.total_area_num):
+                    for i in range(note.total_area_num):
                         entry = note.area_judge_actions[i]
                         area = note.judge_sequence[i]
                         if entry is None:
@@ -432,13 +423,8 @@ class JudgeManager:
                     m, s = divmod(int(s), 60)
                     msg = "[%02d:%02dF%05.2f] 内屏无理：" % (m, s, f)
                     msg += "\"{2}\"(L{0},C{1}) 被提前蹭掉，相关判定区如下".format(*note.cursor)
-                    # 首先找到现在slide应当处理到哪个区
-                    p = (self.timer - note.shoot_moment) / note.duration
-                    if p < 0:
-                        p = 0
-                    area_idx = int(note.total_area_num * p)
-                    # 我们关心从此时slide应当处理到的判定区起，一直到结尾的所有判定区都是怎么被按掉的
-                    for i in range(area_idx, note.total_area_num):
+
+                    for i in range(note.total_area_num):
                         for j in range(3):
                             if i == 0 and j == 1:
                                 break   # 避免起始A区反复打印3次
@@ -509,10 +495,11 @@ class JudgeManager:
                             }
                         )
 
-                        m, s = divmod(self.timer / JUDGE_TPS, 60)
-                        msg = "[%02d:%05.2f] 叠键无理：" % (int(m), s)
+                        s, f = divmod(self.timer / JUDGE_TPF, 60)
+                        m, s = divmod(int(s), 60)
+                        msg = "[%02d:%02dF%05.2f] 叠键无理：" % (m, s, f)
                         msg += "\"{2}\"(L{0},C{1}) 似乎与另一个note重叠".format(*note.cursor)
-                        msg += "(%+.2f ms)" % ((note.judge_moment - note.moment) * 1000 / JUDGE_TPS)
+                        msg += " (%+.2f ms)" % ((note.judge_moment - note.moment) * 1000 / JUDGE_TPS)
                     REPORT_WRITER.writeln(msg)
 
         return this_frame_touch_points, hand_count, finished_notes
