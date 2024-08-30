@@ -2,11 +2,11 @@
 
 Next-generation muri detector for simai, supports DX charts.
 
-支持DX谱面的maimai自制谱无理检测器，可检测包含内屏无理在内的所有类型无理配置并给出报告。
+支持 DX 谱面的 Maimai 自制谱无理检测器，可检测包含内屏无理在内的所有类型无理配置并给出报告。
 
 ## 使用教程
 
-从 Release 页面下载打包好的 MaiMuriDX 压缩包，解压到你喜欢的位置。
+从 [Release](https://github.com/Minepig/MaiMuriDX/releases) 页面下载打包好的 MaiMuriDX 压缩包，解压到你喜欢的位置。
 
 双击 run.bat 即可运行，按照命令行窗口里的提示输入谱面文件路径，选择难度后，跟随程序的指引操作。
 
@@ -73,6 +73,42 @@ Next-generation muri detector for simai, supports DX charts.
 
 在程序采用渲染模式运行且电脑性能较差时，可能会误报叠键无理，可以根据报告行末的时间差判断（真叠键一般都大于 150 ms，如果只有 50 ms 的话应该只是电脑卡了）
 
+## 调整程序设置: `config.json`
+
+程序根目录下的 `config.json` 存放了 MaiMuriDX 的运行参数，如果 `config.json` 文件不存在，运行时会自动创建一个默认版本：
+
+```json
+{
+    "hand_radius_max": 180,
+    "hand_radius_wifi": 100,
+    "hand_radius_normal": 40,
+    "distance_merge_slide": 20,
+    "delta_tangent_merge_slide": 3,
+    "tap_on_slide_threshold": 0.3333,
+    "touch_on_slide_threshold": 8,
+    "overlay_threshold": 2,
+    "collide_threshold": 12,
+    "extra_paddown_delay": 3,
+    "release_delay": 1.3333,
+    "wifi_need_c": false
+}
+```
+
+各项参数含义如下：
+
+- `hand_radius_max` 是处理 TouchGroup 时允许的单手最大半径，单位是像素，在官方框体上 100 px ≈ 5 cm；
+- `hand_radius_wifi` 是处理 Wifi 时的手的半径，单位是像素；
+- `hand_radius_normal` 是处理所有其他配置时的手的半径，单位是像素；
+- `distance_merge_slide` 是允许两条 Slide 动作合并的最大距离，单位是像素；
+- `delta_tangent_merge_slide` 是允许两条 Slide 动作合并的最大夹角，单位是度；
+- `tap_on_slide_threshold` 是将 Tap 识别为拍划配置的时间阈值，单位是帧 (60 FPS)；
+- `touch_on_slide_threshold` 是 Slide 撞 Touch 的时间阈值，单位是帧；
+- `overlay_threshold` 是静态检查时识别叠键的时间阈值，单位是帧；
+- `collide_threshold` 是静态检查时识别撞尾的时间阈值，单位是帧；
+- `extra_paddown_delay` 是动态检查时应该在 Slide 启动后重复触发 A 区的延迟，用以模拟外键无理，单位是帧
+- `release_delay` 是动态检查时每个动作的松手延迟，单位是帧；
+- `wifi_need_c` 是开启模拟旧框 Wifi 的 C 区抬手判的开关，填 `true` 或 `false`。
+
 ## 命令行接口
 
 MaiMuriDX 提供了 cli，在命令行中输入 `cli -h` 即可查看 help。
@@ -83,3 +119,6 @@ MaiMuriDX 使用 Python 编写，所以只要你有对应平台的 Python 解释
 
 > 我寻思 MajdataEdit 也只能在 Windows 上运行吧……真有跨平台需求吗？
 
+## 友情链接
+
+- [MajdataView](https://github.com/LingFeng-bbben/MajdataView)
