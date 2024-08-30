@@ -264,6 +264,7 @@ class JudgeManager:
 
                 # 如果当前动作允许触点合并 (目前只有普通slide的触点允许) 则尝试合并
                 # update: 现在 wifi 可以和 wifi 合并了
+                # TODO: 切线改为速度
                 if action.merge_key() is None:
                     this_frame_touch_points.append(touch_point)
                 else:

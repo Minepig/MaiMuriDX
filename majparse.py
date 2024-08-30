@@ -492,12 +492,15 @@ class SimaiParser:
                             note.set_before_slide(True)
                             continue
 
-                        if note.before_slide:
+                        if not isinstance(note2, SimaiSlideChain):
                             continue
 
-                        if isinstance(note2, SimaiSlideChain) and note2.shoot_moment < note.end_moment < note2.critical_moment:
+                        exit_first_moment = (note2.shoot_moment +
+                                             note2.segment_infos[0].pad_enter_time[0].t * note2.durations[0])
+                        if not note.before_slide and exit_first_moment < note.end_moment < note2.critical_moment:
                             # 一笔画还有一种情况，如果当前slide结尾正好“嵌”进另一个slide
                             # 具体而言，此时有另一个slide的位置和切线与当前slide一致
+                            # TODO: 切线改为速度
                             t = note.end_moment - 0.5   # 取即将结束的前 0.5 tick 比较位置和切线避免 edge case
                             p = (t - note.segment_shoot_moments[-2]) / note.durations[-1]
                             pos = note.segment_infos[-1].path.point(p)
@@ -512,6 +515,22 @@ class SimaiParser:
 
                             if abs(pos - pos2) < DISTANCE_MERGE_SLIDE and abs(tan - tan2) < DELTA_TANGENT_MERGE_SLIDE:
                                 note.set_before_slide(True)
+
+                        if not note.after_slide and exit_first_moment < note.shoot_moment < note2.critical_moment:
+                            t = note.shoot_moment + 0.5
+                            p = 0.5 / note.durations[0]
+                            pos = note.segment_infos[0].path.point(p)
+                            tan = note.segment_infos[0].path.tangent(p)
+                            tan = tan / abs(tan)
+
+                            idx = note2.get_segment_idx(t)
+                            p2 = (t - note2.segment_shoot_moments[idx]) / note2.durations[idx]
+                            pos2 = note2.segment_infos[idx].path.point(p2)
+                            tan2 = note2.segment_infos[idx].path.tangent(p2)
+                            tan2 = tan2 / abs(tan2)
+
+                            if abs(pos - pos2) < DISTANCE_MERGE_SLIDE and abs(tan - tan2) < DELTA_TANGENT_MERGE_SLIDE:
+                                note.set_after_slide(True)
 
     @classmethod
     def _check_touch_on_slide(cls, touch: SimaiTouch, slide: SimaiSlideChain) -> bool:
