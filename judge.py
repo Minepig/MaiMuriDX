@@ -173,12 +173,12 @@ class StaticMuriChecker:
             elif record["type"] == "SlideHeadTap":
                 msg = "外键无理：\"{note}\"(L{line},C{col}) 可能被 ".format_map(record["affected"])
                 msg += "\"{note}\"(L{line},C{col}) 蹭到 ".format_map(record["cause"])
-                msg += "(%+.2f ms)" % (record["delta"] * 1000 / JUDGE_TPS)
+                msg += "(%+.0f ms)" % (record["delta"] * 1000 / JUDGE_TPS)
                 REPORT_WRITER.writeln(msg)
             elif record["type"] == "TapOnSlide":
                 msg = "撞尾无理：\"{note}\"(L{line},C{col}) 可能被 ".format_map(record["affected"])
                 msg += "\"{note}\"(L{line},C{col}) 蹭到 ".format_map(record["cause"])
-                msg += "(%+.2f ms)" % (record["delta"] * 1000 / JUDGE_TPS)
+                msg += "(%+.0f ms)" % (record["delta"] * 1000 / JUDGE_TPS)
                 REPORT_WRITER.writeln(msg)
 
         return muri_records
@@ -374,7 +374,8 @@ class JudgeManager:
                     s, f = divmod(self.timer / JUDGE_TPF, 60)
                     m, s = divmod(int(s), 60)
                     msg = "[%02d:%02dF%05.2f] 内屏无理：" % (m, s, f)
-                    msg += "\"{2}\"(L{0},C{1}) 被提前蹭掉，相关判定区如下".format(*note.cursor)
+                    msg += "\"{2}\"(L{0},C{1}) 被提前蹭掉，".format(*note.cursor)
+                    msg += "CP区间±%.0f ms，相关判定区如下" % (note.critical_delta * 1000 / JUDGE_TPS)
 
                     for i in range(note.total_area_num):
                         entry = note.area_judge_actions[i]
@@ -405,10 +406,10 @@ class JudgeManager:
                                 "/".join(p.name for p in area),
                                 "\"{2}\"(L{0},C{1})".format(*act.source.cursor),
                                 "%02d:%02dF%05.2f" % (m, s, f),
-                                "%+.2f" % ((t - note.moment) * 1000 / JUDGE_TPS),
-                                "%+.2f" % ((t - note.shoot_moment) * 1000 / JUDGE_TPS),
-                                "%+.2f" % ((t - note.critical_moment) * 1000 / JUDGE_TPS),
-                                "%+.2f" % ((t - note.end_moment) * 1000 / JUDGE_TPS),
+                                "%+.0f" % ((t - note.moment) * 1000 / JUDGE_TPS),
+                                "%+.0f" % ((t - note.shoot_moment) * 1000 / JUDGE_TPS),
+                                "%+.0f" % ((t - note.critical_moment) * 1000 / JUDGE_TPS),
+                                "%+.0f" % ((t - note.end_moment) * 1000 / JUDGE_TPS),
                             )
                     self.muri_record_list.append(record)
                     REPORT_WRITER.writeln(msg)
@@ -423,7 +424,8 @@ class JudgeManager:
                     s, f = divmod(self.timer / JUDGE_TPF, 60)
                     m, s = divmod(int(s), 60)
                     msg = "[%02d:%02dF%05.2f] 内屏无理：" % (m, s, f)
-                    msg += "\"{2}\"(L{0},C{1}) 被提前蹭掉，相关判定区如下".format(*note.cursor)
+                    msg += "\"{2}\"(L{0},C{1}) 被提前蹭掉，".format(*note.cursor)
+                    msg += "CP区间±%.0f ms，相关判定区如下" % (note.critical_delta * 1000 / JUDGE_TPS)
 
                     for i in range(note.total_area_num):
                         for j in range(3):
@@ -457,10 +459,10 @@ class JudgeManager:
                                     "/".join(p.name for p in area),
                                     "\"{2}\"(L{0},C{1})".format(*act.source.cursor),
                                     "%02d:%02dF%05.2f" % (m, s, f),
-                                    "%+.2f" % ((t - note.moment) * 1000 / JUDGE_TPS),
-                                    "%+.2f" % ((t - note.shoot_moment) * 1000 / JUDGE_TPS),
-                                    "%+.2f" % ((t - note.critical_moment) * 1000 / JUDGE_TPS),
-                                    "%+.2f" % ((t - note.end_moment) * 1000 / JUDGE_TPS),
+                                    "%+.0f" % ((t - note.moment) * 1000 / JUDGE_TPS),
+                                    "%+.0f" % ((t - note.shoot_moment) * 1000 / JUDGE_TPS),
+                                    "%+.0f" % ((t - note.critical_moment) * 1000 / JUDGE_TPS),
+                                    "%+.0f" % ((t - note.end_moment) * 1000 / JUDGE_TPS),
                                 )
                     self.muri_record_list.append(record)
                     REPORT_WRITER.writeln(msg)
@@ -485,7 +487,7 @@ class JudgeManager:
                         msg += "外键无理：" if isinstance(note.judge_action, ActionExtraPadDown) else "撞尾无理："
                         msg += "\"{2}\"(L{0},C{1}) 被 ".format(*note.cursor)
                         msg += "\"{2}\"(L{0},C{1}) 蹭到 ".format(*note.judge_action.source.cursor)
-                        msg += "(%+.2f ms)" % ((note.judge_moment - note.moment) * 1000 / JUDGE_TPS)
+                        msg += "(%+.0f ms)" % ((note.judge_moment - note.moment) * 1000 / JUDGE_TPS)
 
                     else:
                         self.muri_record_list.append(
@@ -500,7 +502,7 @@ class JudgeManager:
                         m, s = divmod(int(s), 60)
                         msg = "[%02d:%02dF%05.2f] 叠键无理：" % (m, s, f)
                         msg += "\"{2}\"(L{0},C{1}) 似乎与另一个note重叠".format(*note.cursor)
-                        msg += " (%+.2f ms)" % ((note.judge_moment - note.moment) * 1000 / JUDGE_TPS)
+                        msg += " (%+.0f ms)" % ((note.judge_moment - note.moment) * 1000 / JUDGE_TPS)
                     REPORT_WRITER.writeln(msg)
 
         return this_frame_touch_points, hand_count, finished_notes

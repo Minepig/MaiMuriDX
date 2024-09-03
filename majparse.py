@@ -1,7 +1,6 @@
-import random
 from typing import Sequence
 
-from core import HAND_RADIUS_MAX, Pad, JUDGE_TPS, TOUCH_ON_SLIDE_THRESHOLD, TAP_ON_SLIDE_THRESHOLD, REPORT_WRITER, \
+from core import Pad, JUDGE_TPS, TOUCH_ON_SLIDE_THRESHOLD, TAP_ON_SLIDE_THRESHOLD, REPORT_WRITER, \
     HAND_RADIUS_NORMAL, HAND_RADIUS_WIFI, EXTRA_PADDOWN_DELAY, DISTANCE_MERGE_SLIDE, DELTA_TANGENT_MERGE_SLIDE
 from slides import SlideInfo
 from simai import SimaiTap, SimaiHold, SimaiTouch, SimaiTouchHold, SimaiTouchGroup, \
@@ -306,7 +305,7 @@ class SimaiParser:
         return [SimaiTap(cursor, now, pos)]
 
     @classmethod
-    def _workup_each(cls, each_list: list[SimaiNote]) -> list[SimaiNote]:
+    def workup_each(cls, each_list: list[SimaiNote]) -> list[SimaiNote]:
         non_touch_list = []
         touch_list = []
         for note in each_list:
@@ -349,7 +348,7 @@ class SimaiParser:
                 refined_touch.append(touch_list[group[0]])
                 continue
             children = [touch_list[i] for i in group]
-            cur = children[0].cursor[0], children[0].cursor[1], "/".join(t.pad.name for t in children)
+            cur = children[0].cursor[0], children[0].cursor[1], "/".join(t.cursor[2] for t in children)
             tg = SimaiTouchGroup(cur, children[0].moment, children)
             refined_touch.append(tg)
 
@@ -425,7 +424,7 @@ class SimaiParser:
                             current_each.extend(notelist)
                         else:
                             current_each.extend(notelist)
-                            result.extend(cls._workup_each(current_each))
+                            result.extend(cls.workup_each(current_each))
                             current_each = []
                     have_note = False
                     current_note = ""
@@ -443,12 +442,12 @@ class SimaiParser:
                 else:
                     REPORT_WRITER.writeln("L:", lineno, "C:", column, "Invalid symbol:", ch)
 
-        cls._post_parse_workup(result)
+        cls.post_parse_workup(result)
         result.sort(key=lambda x: x.moment)
         return result
 
     @classmethod
-    def _post_parse_workup(cls, chart: Sequence[SimaiNote]) -> None:
+    def post_parse_workup(cls, chart: Sequence[SimaiNote]) -> None:
         for note in chart:
             if isinstance(note, SimaiTap):
                 # check for tap-slide pair (tap occurs when slide shoots)
