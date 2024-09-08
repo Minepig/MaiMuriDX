@@ -312,6 +312,7 @@ class JudgeManager:
                 self.muri_record_list.append(
                     {
                         "time": self.timer / JUDGE_TPS,
+                        "combo": self.note_pointer,
                         "type": "MultiTouch",
                         "hand_count": hand_count,
                         "cause": [{"line": c[0], "col": c[1], "note": c[2]} for c in affected_cursors],
@@ -366,6 +367,7 @@ class JudgeManager:
                     # 是星星，那就是内屏无理
                     record = {
                         "time": self.timer / JUDGE_TPS,
+                        "combo": self.note_pointer,
                         "type": "SlideTooFast",
                         "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
                         "judge_areas": [],
@@ -417,6 +419,7 @@ class JudgeManager:
                 elif isinstance(note, SimaiWifi):
                     record = {
                         "time": self.timer / JUDGE_TPS,
+                        "combo": self.note_pointer,
                         "type": "SlideTooFast",
                         "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
                         "judge_areas": [],
@@ -473,6 +476,7 @@ class JudgeManager:
                         self.muri_record_list.append(
                             {
                                 "time": self.timer / JUDGE_TPS,
+                                "combo": self.note_pointer,
                                 "type": "SlideHeadTap" if isinstance(note.judge_action, ActionExtraPadDown) else "TapOnSlide",
                                 "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
                                 "cause": {"line": note.judge_action.source.cursor[0],
@@ -493,6 +497,7 @@ class JudgeManager:
                         self.muri_record_list.append(
                             {
                                 "time": self.timer / JUDGE_TPS,
+                                "combo": self.note_pointer,
                                 "type": "Overlap",
                                 "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
                             }

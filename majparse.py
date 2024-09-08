@@ -203,7 +203,8 @@ class SimaiParser:
                     end = next(char_iter)
                     shapes.append(last_target + ch + end)
                     last_target = end
-
+        if not SlideInfo._entries:
+            SlideInfo.generate_all()
         # validate all shape
         for shape in shapes:
             try:
