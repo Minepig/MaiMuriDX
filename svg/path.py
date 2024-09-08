@@ -854,6 +854,8 @@ class Path(MutableSequence):
 
         # Find which segment the point we search for is located on:
         i = bisect(self._fractions, pos)
+        if i >= len(self._fractions):
+            i = len(self._fractions) - 1
         if i == 0:
             segment_pos = pos / self._fractions[0]
         else:
