@@ -66,8 +66,6 @@ class StaticMuriChecker:
     def _slide_head_tap_record(note: SimaiNote, slide: SimaiNote, delta: float) -> dict:
         return {
             "type": "SlideHeadTap",
-            "note_combo": note.combo,
-            "slide_combo": slide.combo,
             "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2], "combo": note.combo},
             "cause": {"line": slide.cursor[0], "col": slide.cursor[1], "note": slide.cursor[2], "combo": slide.combo},
             "delta": delta,
