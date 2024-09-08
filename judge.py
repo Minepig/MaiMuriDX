@@ -48,16 +48,16 @@ class StaticMuriChecker:
     def _overlap_record(note: SimaiNote, note2: SimaiNote) -> dict:
         return {
             "type": "Overlap",
-            "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
-            "cause": {"line": note2.cursor[0], "col": note2.cursor[1], "note": note2.cursor[2]},
+            "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2], "combo": note.combo},
+            "cause": {"line": note2.cursor[0], "col": note2.cursor[1], "note": note2.cursor[2], "combo": note2.combo},
         }
 
     @staticmethod
     def _tap_on_slide_record(note: SimaiNote, slide: SimaiNote, delta: float) -> dict:
         return {
             "type": "TapOnSlide",
-            "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
-            "cause": {"line": slide.cursor[0], "col": slide.cursor[1], "note": slide.cursor[2]},
+            "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2], "combo": note.combo},
+            "cause": {"line": slide.cursor[0], "col": slide.cursor[1], "note": slide.cursor[2], "combo": slide.combo},
             "delta": delta,
         }
 
@@ -65,20 +65,34 @@ class StaticMuriChecker:
     def _slide_head_tap_record(note: SimaiNote, slide: SimaiNote, delta: float) -> dict:
         return {
             "type": "SlideHeadTap",
-            "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
-            "cause": {"line": slide.cursor[0], "col": slide.cursor[1], "note": slide.cursor[2]},
+            "note_combo": note.combo,
+            "slide_combo": slide.combo,
+            "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2], "combo": note.combo},
+            "cause": {"line": slide.cursor[0], "col": slide.cursor[1], "note": slide.cursor[2], "combo": slide.combo},
             "delta": delta,
         }
 
     @classmethod
     def check(cls, note_sequence: Sequence[SimaiNote]):
         muri_records = []
+        flatten = list(cls._flatten_touch_group(note_sequence))
 
+        def _(_):
+            if getattr(_, "critical_moment", None):
+                return _.critical_moment
+            elif getattr(_, "end_moment", None):
+                return _.end_moment
+            else:
+                return _.moment
+        sorted_sequence = sorted(flatten,
+                                 key=_)
+        for index, it in enumerate(sorted_sequence, start=1):
+            it.combo = index
         # 拆分note序列
         slides = []
         wifis = []
         non_slides = []
-        for note in cls._flatten_touch_group(note_sequence):
+        for note in flatten:
             if isinstance(note, SimaiSlideChain):
                 slides.append(note)
             elif isinstance(note, SimaiWifi):
@@ -167,17 +181,17 @@ class StaticMuriChecker:
 
         for record in sorted(muri_records, key=(lambda x: (x["affected"]["line"], x["affected"]["col"]))):
             if record["type"] == "Overlap":
-                msg = "叠键无理：\"{note}\"(L{line},C{col}) 与 ".format_map(record["affected"])
-                msg += "\"{note}\"(L{line},C{col}) 重叠".format_map(record["cause"])
+                msg = "叠键无理：{combo}cb处\"{note}\"(L{line},C{col}) 与 ".format_map(record["affected"])
+                msg += "{combo}cb处\"{note}\"(L{line},C{col}) 重叠".format_map(record["cause"])
                 REPORT_WRITER.writeln(msg)
             elif record["type"] == "SlideHeadTap":
-                msg = "外键无理：\"{note}\"(L{line},C{col}) 可能被 ".format_map(record["affected"])
-                msg += "\"{note}\"(L{line},C{col}) 蹭到 ".format_map(record["cause"])
+                msg = "外键无理：{combo}cb处\"{note}\"(L{line},C{col}) 可能被 ".format_map(record["affected"])
+                msg += "{combo}cb处\"{note}\"(L{line},C{col}) 蹭到 ".format_map(record["cause"])
                 msg += "(%+.0f ms)" % (record["delta"] * 1000 / JUDGE_TPS)
                 REPORT_WRITER.writeln(msg)
             elif record["type"] == "TapOnSlide":
-                msg = "撞尾无理：\"{note}\"(L{line},C{col}) 可能被 ".format_map(record["affected"])
-                msg += "\"{note}\"(L{line},C{col}) 蹭到 ".format_map(record["cause"])
+                msg = "撞尾无理：{combo}cb处\"{note}\"(L{line},C{col}) 可能被 ".format_map(record["affected"])
+                msg += "{combo}cb处\"{note}\"(L{line},C{col}) 蹭到 ".format_map(record["cause"])
                 msg += "(%+.0f ms)" % (record["delta"] * 1000 / JUDGE_TPS)
                 REPORT_WRITER.writeln(msg)
 
@@ -312,7 +326,6 @@ class JudgeManager:
                 self.muri_record_list.append(
                     {
                         "time": self.timer / JUDGE_TPS,
-                        "combo": self.note_pointer,
                         "type": "MultiTouch",
                         "hand_count": hand_count,
                         "cause": [{"line": c[0], "col": c[1], "note": c[2]} for c in affected_cursors],
@@ -367,7 +380,6 @@ class JudgeManager:
                     # 是星星，那就是内屏无理
                     record = {
                         "time": self.timer / JUDGE_TPS,
-                        "combo": self.note_pointer,
                         "type": "SlideTooFast",
                         "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
                         "judge_areas": [],
@@ -419,7 +431,6 @@ class JudgeManager:
                 elif isinstance(note, SimaiWifi):
                     record = {
                         "time": self.timer / JUDGE_TPS,
-                        "combo": self.note_pointer,
                         "type": "SlideTooFast",
                         "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
                         "judge_areas": [],
@@ -476,7 +487,6 @@ class JudgeManager:
                         self.muri_record_list.append(
                             {
                                 "time": self.timer / JUDGE_TPS,
-                                "combo": self.note_pointer,
                                 "type": "SlideHeadTap" if isinstance(note.judge_action, ActionExtraPadDown) else "TapOnSlide",
                                 "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
                                 "cause": {"line": note.judge_action.source.cursor[0],
@@ -497,7 +507,6 @@ class JudgeManager:
                         self.muri_record_list.append(
                             {
                                 "time": self.timer / JUDGE_TPS,
-                                "combo": self.note_pointer,
                                 "type": "Overlap",
                                 "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
                             }
