@@ -5,7 +5,8 @@ from core import JudgeResult, Pad, REPORT_WRITER
 from core import JUDGE_TPF, JUDGE_TPS, DISTANCE_MERGE_SLIDE, DELTA_TANGENT_MERGE_SLIDE
 from core import OVERLAY_THRESHOLD, COLLIDE_EXTRA_DELTA, TAP_ON_SLIDE_THRESHOLD, COLLIDE_THRESHOLD
 from action import ActionExtraPadDown
-from simai import SimaiNote, SimaiSlideChain, SimaiWifi, SimaiTap, SimaiHold, SimaiTouch, SimaiTouchHold, SimaiTouchGroup
+from simai import SimaiNote, SimaiSlideChain, SimaiWifi, SimaiTap, SimaiHold, SimaiTouch, SimaiTouchHold, \
+    SimaiTouchGroup
 from action import Action
 
 
@@ -84,6 +85,7 @@ class StaticMuriChecker:
                 return _.end_moment
             else:
                 return _.moment
+
         sorted_sequence = sorted(flatten,
                                  key=_)
         for index, it in enumerate(sorted_sequence, start=1):
@@ -118,10 +120,10 @@ class StaticMuriChecker:
 
             for note in non_slides:
                 if not isinstance(note, SimaiTap | SimaiHold):
-                    continue    # 筛掉 touch
+                    continue  # 筛掉 touch
 
                 if note.moment < slide.shoot_moment or note.moment > slide.end_moment + COLLIDE_THRESHOLD:
-                    continue    # 筛掉打击时刻不在 slide 范围内的
+                    continue  # 筛掉打击时刻不在 slide 范围内的
 
                 # 先查第一个区的外无
                 if note.idx == slide.start and TAP_ON_SLIDE_THRESHOLD <= note.moment - slide.shoot_moment <= COLLIDE_THRESHOLD:
@@ -140,10 +142,10 @@ class StaticMuriChecker:
         for wifi in wifis:
             for note in non_slides:
                 if not isinstance(note, SimaiTap | SimaiHold):
-                    continue    # 筛掉 touch
+                    continue  # 筛掉 touch
 
                 if note.moment < wifi.shoot_moment or note.moment > wifi.end_moment + COLLIDE_THRESHOLD:
-                    continue    # 筛掉打击时刻不在 slide 范围内的
+                    continue  # 筛掉打击时刻不在 slide 范围内的
 
                 # 偷个懒，wifi其实只需要查头尾
                 if wifi.start == note.idx and TAP_ON_SLIDE_THRESHOLD <= note.moment - wifi.shoot_moment <= COLLIDE_THRESHOLD:
@@ -200,6 +202,7 @@ class StaticMuriChecker:
 
 class MultiTouchMuri:
     __slots__ = ("_cursors",)
+
     def __init__(self, cursors: Iterable[tuple[int, int, str]]):
         self._cursors = tuple(sorted(cursors))
 
@@ -252,11 +255,11 @@ class JudgeManager:
                 break
 
         # ===== 更新触摸状态 =====
-        next_pad_state = 0      # 记录下一tick初始时的触摸板状态
-        finished_actions: list[Action] = []     # 记录已经完成的action
-        this_frame_touch_points: list[TouchPoint] = []      # 记录本tick中的触点
+        next_pad_state = 0  # 记录下一tick初始时的触摸板状态
+        finished_actions: list[Action] = []  # 记录已经完成的action
+        this_frame_touch_points: list[TouchPoint] = []  # 记录本tick中的触点
 
-        pad_down_source_dict: dict[Pad, Action] = {}    # 记录本tick触发的pad down事件及其来源
+        pad_down_source_dict: dict[Pad, Action] = {}  # 记录本tick触发的pad down事件及其来源
         # 记录本tick触发的pad down事件及其来源
         pad_up_source_dict: dict[Pad, Action | None] = {p: None for p in Pad}
         # 记录下一tick初始时各激活触摸板的来源
@@ -322,7 +325,7 @@ class JudgeManager:
             affected_cursors = set(a.source.cursor for _0, _1, _2, a in this_frame_touch_points)
             muri = MultiTouchMuri(affected_cursors)
             if muri not in self.multi_touch_muri:
-                self.multi_touch_muri.add(muri)     # 记录下来避免重复报告
+                self.multi_touch_muri.add(muri)  # 记录下来避免重复报告
                 self.muri_record_list.append(
                     {
                         "time": self.timer / JUDGE_TPS,
@@ -381,14 +384,15 @@ class JudgeManager:
                     record = {
                         "time": self.timer / JUDGE_TPS,
                         "type": "SlideTooFast",
-                        "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
+                        "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2],
+                                     "combo": note.combo},
                         "judge_areas": [],
                     }
 
                     s, f = divmod(self.timer / JUDGE_TPF, 60)
                     m, s = divmod(int(s), 60)
                     msg = "[%02d:%02dF%05.2f] 内屏无理：" % (m, s, f)
-                    msg += "\"{2}\"(L{0},C{1}) 被提前蹭掉，".format(*note.cursor)
+                    msg += "{3}cb处\"{2}\"(L{0},C{1}) 被提前蹭掉，".format(*note.cursor, note.combo)
                     msg += "CP区间±%.0f ms，相关判定区如下" % (note.critical_delta * 1000 / JUDGE_TPS)
 
                     for i in range(note.total_area_num):
@@ -410,7 +414,8 @@ class JudgeManager:
                                     "area": "/".join(p.name for p in area),
                                     "cause": {"line": act.source.cursor[0],
                                               "col": act.source.cursor[1],
-                                              "note": act.source.cursor[2]},
+                                              "note": act.source.cursor[2],
+                                              "combo": act.source.combo},
                                     "time": t / JUDGE_TPS,
                                 }
                             )
@@ -432,19 +437,20 @@ class JudgeManager:
                     record = {
                         "time": self.timer / JUDGE_TPS,
                         "type": "SlideTooFast",
-                        "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
+                        "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2],
+                                     "combo": note.combo},
                         "judge_areas": [],
                     }
                     s, f = divmod(self.timer / JUDGE_TPF, 60)
                     m, s = divmod(int(s), 60)
                     msg = "[%02d:%02dF%05.2f] 内屏无理：" % (m, s, f)
-                    msg += "\"{2}\"(L{0},C{1}) 被提前蹭掉，".format(*note.cursor)
+                    msg += "{3}cb处\"{2}\"(L{0},C{1}) 被提前蹭掉，".format(*note.cursor, note.combo)
                     msg += "CP区间±%.0f ms，相关判定区如下" % (note.critical_delta * 1000 / JUDGE_TPS)
 
                     for i in range(note.total_area_num):
                         for j in range(3):
                             if i == 0 and j == 1:
-                                break   # 避免起始A区反复打印3次
+                                break  # 避免起始A区反复打印3次
                             entry = note.area_judge_actions[j][i]
                             area = note.info.tri_judge_sequence[j][i]
                             if entry is None:
@@ -463,7 +469,8 @@ class JudgeManager:
                                         "area": "/".join(p.name for p in area),
                                         "cause": {"line": act.source.cursor[0],
                                                   "col": act.source.cursor[1],
-                                                  "note": act.source.cursor[2]},
+                                                  "note": act.source.cursor[2],
+                                                  "combo": act.source.combo},
                                         "time": t / JUDGE_TPS,
                                     }
                                 )
@@ -487,11 +494,14 @@ class JudgeManager:
                         self.muri_record_list.append(
                             {
                                 "time": self.timer / JUDGE_TPS,
-                                "type": "SlideHeadTap" if isinstance(note.judge_action, ActionExtraPadDown) else "TapOnSlide",
-                                "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
+                                "type": "SlideHeadTap" if isinstance(note.judge_action,
+                                                                     ActionExtraPadDown) else "TapOnSlide",
+                                "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2],
+                                             "combo": note.combo},
                                 "cause": {"line": note.judge_action.source.cursor[0],
                                           "col": note.judge_action.source.cursor[1],
-                                          "note": note.judge_action.source.cursor[2]},
+                                          "note": note.judge_action.source.cursor[2],
+                                          "combo": note.judge_action.source.combo},
                             }
                         )
 
@@ -499,8 +509,8 @@ class JudgeManager:
                         m, s = divmod(int(s), 60)
                         msg = "[%02d:%02dF%05.2f] " % (m, s, f)
                         msg += "外键无理：" if isinstance(note.judge_action, ActionExtraPadDown) else "撞尾无理："
-                        msg += "\"{2}\"(L{0},C{1}) 被 ".format(*note.cursor)
-                        msg += "\"{2}\"(L{0},C{1}) 蹭到 ".format(*note.judge_action.source.cursor)
+                        msg += "{3}cb处\"{2}\"(L{0},C{1}) 被 ".format(*note.cursor, note.combo)
+                        msg += "{3}cb处\"{2}\"(L{0},C{1}) 蹭到 ".format(*note.judge_action.source.cursor,note.judge_action.source.combo)
                         msg += "(%+.0f ms)" % ((note.judge_moment - note.moment) * 1000 / JUDGE_TPS)
 
                     else:
@@ -508,24 +518,19 @@ class JudgeManager:
                             {
                                 "time": self.timer / JUDGE_TPS,
                                 "type": "Overlap",
-                                "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2]},
+                                "affected": {"line": note.cursor[0], "col": note.cursor[1], "note": note.cursor[2], "combo": note.combo},
                             }
                         )
 
                         s, f = divmod(self.timer / JUDGE_TPF, 60)
                         m, s = divmod(int(s), 60)
                         msg = "[%02d:%02dF%05.2f] 叠键无理：" % (m, s, f)
-                        msg += "\"{2}\"(L{0},C{1}) 似乎与另一个note重叠".format(*note.cursor)
+                        msg += "{3}cb处\"{2}\"(L{0},C{1}) 似乎与另一个note重叠".format(*note.cursor, note.combo)
                         msg += " (%+.0f ms)" % ((note.judge_moment - note.moment) * 1000 / JUDGE_TPS)
                     REPORT_WRITER.writeln(msg)
 
         return this_frame_touch_points, hand_count, finished_notes
 
 
-
-
-
-
 if __name__ == "__main__":
     pass
-
