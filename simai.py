@@ -278,6 +278,8 @@ class SimaiSlideChain(SimaiNote):
             raise TypeError("either `durations` or `total_duration` need to be specified")
 
         super().__init__(cursor, moment)
+        if not SlideInfo._entries:
+            SlideInfo.generate_all()
         self.shapes = tuple(shapes)     # 存储了slidechain里每一段的形状，比如1-3-5这里就是("1-3", "3-5")
         self.segment_infos: tuple[SlideInfo, ...] = tuple(SlideInfo.get(k) for k in shapes)     # 每一段的信息
         self.start = self.segment_infos[0].start    # 整个slidechain的起点
@@ -470,6 +472,8 @@ class SimaiWifi(SimaiNote):
         @param wait: the waiting time before slide-star shoots (in ticks)
         @param duration: the duration of the wifi slide (in ticks)
         """
+        if not WifiInfo._entries:
+            WifiInfo.generate_all()
         super().__init__(cursor, moment)
         self.shape = shape
         self.info = WifiInfo.get(shape)
