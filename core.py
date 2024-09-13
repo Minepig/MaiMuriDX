@@ -66,7 +66,7 @@ if not config_path.exists():
             "overlay_threshold": 2,
             "collide_threshold": 12,
             "extra_paddown_delay": 3,
-            "release_delay": 1 + round(1/JUDGE_TPF, 4),
+            "release_delay": 1,
             "wifi_need_c": False,
         }
         json.dump(obj, f, indent=4)

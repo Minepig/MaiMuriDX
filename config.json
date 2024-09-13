@@ -4,11 +4,11 @@
     "hand_radius_normal": 40,
     "distance_merge_slide": 20,
     "delta_tangent_merge_slide": 3,
-    "tap_on_slide_threshold": 0.3333333333333333,
+    "tap_on_slide_threshold": 0.3333,
     "touch_on_slide_threshold": 8,
     "overlay_threshold": 2,
     "collide_threshold": 12,
     "extra_paddown_delay": 3,
-    "release_delay": 1.3333333333333333,
+    "release_delay": 1,
     "wifi_need_c": false
 }

@@ -329,7 +329,7 @@ class JudgeManager:
                         "time": self.timer / JUDGE_TPS,
                         "type": "MultiTouch",
                         "hand_count": hand_count,
-                        "cause": [{"line": c[0], "col": c[1], "note": c[2]} for c in affected_cursors],
+                        "cause": [{"line": c[0], "col": c[1], "note": c[2]} for c in sorted(affected_cursors)],
                     }
                 )
 

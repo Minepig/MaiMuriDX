@@ -162,8 +162,7 @@ cython_debug/
 #.idea/
 
 /dummy/
-chart.txt
-out.json
-out.txt
 /docs/.obsidian/
 /docs/开发笔记 Obsidian.md
+/batch.py
+/ma2tosimai.py
