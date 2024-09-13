@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from action import Action, ActionSlide
 from core import CANVAS_CENTER, CANVAS_SIZE, Pad, JUDGE_TPS, RENDER_FPS, REPORT_WRITER
 from judge import JudgeManager, StaticMuriChecker
-from majparse import NoteActionConverter, SimaiParser
+from majparse import MA2Parser, NoteActionConverter, SimaiParser
 from render import EffectRenderer, NoteRenderer, PressEffect, SlideJudgeEffect, SimpleJudgeEffect
 from simai import SimaiNote, SimaiTouchGroup
 from slides import init as init_slides
@@ -247,42 +247,46 @@ class Game:
                                % tuple(counter))
 
 
-
-
 if __name__ == "__main__":
+    MA2_MODE = False
     print("输入谱面文件路径: ")
     path_to_chart = pathlib.Path(input())
     if path_to_chart.is_dir():
         path_to_chart = path_to_chart / "maidata.txt"
-    path_to_track = path_to_chart.parent / "track.mp3"
-    # path_to_bg = path_to_track.parent / "bg.jpg"
-    # if path_to_bg.exists():
-    #     GameRenderer.background_path = path_to_bg
+    if path_to_chart.suffix == ".ma2":
+        MA2_MODE = True
+        print("输入乐曲文件路径: ")
+        path_to_track = pathlib.Path(input())
+        with path_to_chart.open("r", encoding="utf-8") as f:
+            ma2text = f.read()
+        chart = MA2Parser.parse_ma2_chart(ma2text)
+    else:
+        path_to_track = path_to_chart.parent / "track.mp3"
+        first = 0
+        charts = {}
+        with path_to_chart.open("r", encoding="utf-8") as f:
+            text = f.read()
+            commands = text.split("&")
+            for command in commands:
+                if command.startswith("first="):
+                    first = float(command[6:])
+                elif command.startswith("inote_"):
+                    x = command[6]
+                    charts[x] = command[8:]
+
+        print("可用难度:", ", ".join(charts.keys()))
+        d = input("请输入难度: ")
+        chart_str = charts[d]
+        chart = SimaiParser.parse_simai_chart(chart_str, first)
+        REPORT_WRITER.writeln_no_stdout("谱面文件：%s\n难度：%s\n" % (path_to_chart, d))
+
     pg.mixer.music.load(path_to_track)
     pg.mixer.music.set_volume(0.3)
 
-    first = 0
-    charts = {}
-
-    with path_to_chart.open("r", encoding="utf-8") as f:
-        text = f.read()
-        commands = text.split("&")
-        for command in commands:
-            if command.startswith("first="):
-                first = float(command[6:])
-            elif command.startswith("inote_"):
-                x = command[6]
-                charts[x] = command[8:]
-
-    print("可用难度:", ", ".join(charts.keys()))
-    d = input("请输入难度: ")
-    chart_str = charts[d]
     flag = bool(input("是否关闭渲染？(不输入任何内容即为否) "))
 
     try:
-        REPORT_WRITER.writeln_no_stdout("谱面文件：%s\n难度：%s\n" % (path_to_chart, d))
         game = Game(flag)
-        chart = SimaiParser.parse_simai_chart(chart_str, first)
         game.load_chart(chart)
         REPORT_WRITER.writeln("谱面加载完成，共%d个note" % len(chart))
         if flag:
@@ -292,7 +296,7 @@ if __name__ == "__main__":
         pg.quit()
     except Exception:
         traceback.print_exc()
-        REPORT_WRITER.writeln(traceback.format_exc())
+        REPORT_WRITER.writeln_no_stdout(traceback.format_exc())
 
     saving = True
     while saving:

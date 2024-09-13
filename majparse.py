@@ -625,5 +625,267 @@ class NoteActionConverter:
         return result
 
 
+class MA2Parser:
+    NOTE_CMD_LEGACY = {
+        "TAP", "BRK", "XTP", "HLD", "XHO", "STR", "BST", "XST", "TTP", "THO", "SI_", "SCL", "SCR", "SUL", "SUR",
+        "SSL", "SSR", "SV_", "SXL", "SXR", "SLL", "SLR", "SF_",
+    }
+    NOTE_CMD = {
+        "NMTAP", "BRTAP", "EXTAP", "BXTAP", "NMHLD", "BRHLD",
+        "EXHLD", "BXHLD", "NMSTR", "BRSTR", "EXSTR", "BXSTR", "NMTTP", "NMTHO", "NMSI_", "BRSI_", "EXSI_", "BXSI_",
+        "CNSI_", "NMSCL", "BRSCL", "EXSCL", "BXSCL", "CNSCL", "NMSCR", "BRSCR", "EXSCR", "BXSCR", "CNSCR", "NMSUL",
+        "BRSUL", "EXSUL", "BXSUL", "CNSUL", "NMSUR", "BRSUR", "EXSUR", "BXSUR", "CNSUR", "NMSSL", "BRSSL", "EXSSL",
+        "BXSSL", "CNSSL", "NMSSR", "BRSSR", "EXSSR", "BXSSR", "CNSSR", "NMSV_", "BRSV_", "EXSV_", "BXSV_", "CNSV_",
+        "NMSXL", "BRSXL", "EXSXL", "BXSXL", "CNSXL", "NMSXR", "BRSXR", "EXSXR", "BXSXR", "CNSXR", "NMSLL", "BRSLL",
+        "EXSLL", "BXSLL", "CNSLL", "NMSLR", "BRSLR", "EXSLR", "BXSLR", "CNSLR", "NMSF_", "BRSF_", "EXSF_", "BXSF_",
+        "CNSF_",
+    }
+    TICKS_PER_BAR = 384
+    NOTE_TYPE_ORDER = ("TTP", "TAP", "HLD", "THO", "SLD", "FAN")
 
+    @classmethod
+    def parse_ma2_chart(cls, chart_str: str) -> Sequence[SimaiNote]:
+        lines = chart_str.splitlines()
+        bpm_entries = []
+        note_entries = []
+        connect_slide_entries = []
+        used_line = set()
+
+        for lineno, line in enumerate(lines):
+            if lineno in used_line:
+                continue
+
+            args = line.split()
+            if not args:
+                continue
+
+            cmd = args[0]
+            if cmd == "RESOLUTION":
+                assert args[1] == "384"
+
+            if cmd == "BPM":
+                bar, tick = int(args[1]), int(args[2])
+                moment = bar * cls.TICKS_PER_BAR + tick
+                bpm = float(args[3])
+                bpm_entries.append((moment, bpm))
+                continue
+
+            if cmd in cls.NOTE_CMD_LEGACY:
+                if cmd == "BRK":
+                    cmd = "BRTAP"
+                elif cmd == "XTP":
+                    cmd = "EXTAP"
+                elif cmd == "XHO":
+                    cmd = "EXHLD"
+                elif cmd == "BST":
+                    cmd = "BRSTR"
+                elif cmd == "XST":
+                    cmd = "EXSTR"
+                else:
+                    cmd = "NM" + cmd
+
+            if cmd in cls.NOTE_CMD:
+                if cmd == "CNSF_":
+                    raise ValueError(f"Command not supported: {cmd}")
+                br = (cmd[0] == "B")    # not used
+                ex = (cmd[1] == "X")    # not used
+                postfix = "b" if br else ""
+                postfix += "x" if ex else ""
+                type_ = cmd[2:]
+                bar, tick = int(args[1]), int(args[2])
+                moment = bar * cls.TICKS_PER_BAR + tick
+                if type_ == "TAP" or type_ == "STR":  # tap & star
+                    idx = int(args[3]) + 1
+                    if type_ == "STR":
+                        postfix = "$" + postfix
+                    note_entries.append((lineno, "TAP", moment, idx, postfix))
+                elif type_ == "HLD":    # hold
+                    idx = int(args[3]) + 1
+                    duration = int(args[4])
+                    note_entries.append((lineno, "HLD", moment, idx, duration, postfix))
+                elif type_ == "TTP":    # touch
+                    idx = int(args[3]) + 1
+                    pad = "C" if args[4] == "C" else args[4] + str(idx)
+                    eff = (args[5] == "1")  # not used
+                    large = (args[6] == "L1")  # not used
+                    note_entries.append((lineno, "TTP", moment, pad))
+                elif type_ == "THO":    # touchhold
+                    idx = int(args[3]) + 1
+                    duration = int(args[4])
+                    pad = "C" if args[5] == "C" else args[5] + str(idx)
+                    eff = (args[6] == "1")  # not used
+                    large = (args[7] == "L1")  # not used
+                    note_entries.append((lineno, "THO", moment, pad, duration))
+
+                else:   # all slides
+                    if ex:
+                        raise ValueError(f"Command not supported: {cmd}")
+                    start = int(args[3]) + 1
+                    end = int(args[6]) + 1
+                    wait = int(args[4])
+                    duration = int(args[5])
+                    shape_code = type_[1:]
+                    if shape_code == "LL":
+                        # Grand V, CCW (1V7_)
+                        mid = (start - 2) % 8 or 8
+                        shape = "V%d" % mid
+                    elif shape_code == "LR":
+                        # Grand V, CW (1V3_)
+                        mid = (start + 2) % 8 or 8
+                        shape = "V%d" % mid
+                    elif shape_code == "CL":
+                        # Circle, CCW
+                        shape = ">" if start in {3, 4, 5, 6} else "<"
+                    elif shape_code == "CR":
+                        # Circle, CW
+                        shape = "<" if start in {3, 4, 5, 6} else ">"
+                    elif shape_code == "I_":
+                        shape = "-"
+                    elif shape_code == "UL":
+                        shape = "p"
+                    elif shape_code == "UR":
+                        shape = "q"
+                    elif shape_code == "SL":
+                        shape = "s"
+                    elif shape_code == "SR":
+                        shape = "z"
+                    elif shape_code == "V_":
+                        shape = "v"
+                    elif shape_code == "XL":
+                        shape = "pp"
+                    elif shape_code == "XR":
+                        shape = "qq"
+                    elif shape_code == "F_":
+                        shape = "w"
+                    else:
+                        raise ValueError(f"Unknown command: {cmd}")
+                    shape = str(start) + shape + str(end)
+                    if shape_code == "F_":
+                        note_entries.append((lineno, "FAN", moment, shape, wait, duration, br))
+                    elif cmd[:2] == "CN":
+                        connect_slide_entries.append((lineno, "SLD", moment, shape, wait, duration))
+                    else:
+                        note_entries.append((lineno, "SLD", moment, shape, wait, duration, br))
+
+        # end of for loop
+        note_entries.sort(key=lambda x: (x[2], cls.NOTE_TYPE_ORDER.index(x[1])))
+        connect_slide_entries.sort(key=lambda x: x[2])
+
+        assert bpm_entries[0][0] == 0
+
+        each_list = []
+        result = []
+
+        def ma2tick_to_judgetick(tick: int) -> float:
+            t = 0
+            prev_moment = 0
+            prev_bpm = bpm_entries[0][1]
+            for moment, bpm in bpm_entries[1:]:
+                if moment > tick:
+                    break
+                t += (moment - prev_moment) * 240 / (prev_bpm * cls.TICKS_PER_BAR) * JUDGE_TPS
+                prev_moment = moment
+                prev_bpm = bpm
+            t += (tick - prev_moment) * 240 / (prev_bpm * cls.TICKS_PER_BAR) * JUDGE_TPS
+            return t
+
+        last_tick = 0
+        for entry in note_entries:
+            lineno, note_type, tick = entry[:3]
+            if tick > last_tick:
+                result.extend(SimaiParser.workup_each(each_list))
+                each_list = []
+                last_tick = tick
+
+            if note_type == "TTP":
+                pad = entry[3]
+                cursor = (lineno, tick, pad)
+                each_list.append(SimaiTouch(cursor, ma2tick_to_judgetick(tick), pad))
+
+            elif note_type == "TAP":
+                idx = entry[3]
+                postfix = entry[4]
+                cursor = (lineno, tick, str(idx) + postfix)
+                each_list.append(SimaiTap(cursor, ma2tick_to_judgetick(tick), idx))
+
+            elif note_type == "HLD":
+                idx = entry[3]
+                duration = entry[4]
+                postfix = entry[5]
+                moment_converted = ma2tick_to_judgetick(tick)
+                duration_converted = ma2tick_to_judgetick(tick + duration) - moment_converted
+                cursor = (lineno, tick, str(idx) + postfix + "h[" + str(duration) + "]")
+                each_list.append(SimaiHold(cursor, moment_converted, idx, duration_converted))
+
+            elif note_type == "THO":
+                pad = entry[3]
+                duration = entry[4]
+                moment_converted = ma2tick_to_judgetick(tick)
+                duration_converted = ma2tick_to_judgetick(tick + duration) - moment_converted
+                cursor = (lineno, tick, pad + "h[" + str(duration) + "]")
+                each_list.append(SimaiTouchHold(cursor, moment_converted, pad, duration_converted))
+
+            elif note_type == "FAN":
+                shape = entry[3]
+                wait = entry[4]
+                duration = entry[5]
+                br = entry[6]
+
+                moment_converted = ma2tick_to_judgetick(tick)
+                shoot_converted = ma2tick_to_judgetick(tick + wait)
+                wait_converted = shoot_converted - moment_converted
+                duration_converted = ma2tick_to_judgetick(tick + wait + duration) - shoot_converted
+                postfix = "b" if br else ""
+                cursor = (lineno, tick, shape + "[" + str(wait) + "#" + str(duration) + "]" + postfix)
+
+                each_list.append(SimaiWifi(cursor, moment_converted, shape, wait_converted, duration_converted))
+
+            elif note_type == "SLD":
+                shape = entry[3]
+                wait = entry[4]
+                duration = entry[5]
+                br = entry[6]
+
+                tail = shape[-1]
+                end_tick = tick + wait + duration
+                children = []
+
+                # 找到串联的星星
+                for connect in connect_slide_entries:
+                    if connect[2] > end_tick:
+                        break
+
+                    if connect[2] == end_tick and connect[3][0] == tail:
+                        children.append(connect)
+                        tail = connect[3][-1]
+                        end_tick = connect[2] + connect[4] + connect[5]
+
+                shapes = [shape]
+                for connect in children:
+                    shapes.append(connect[3])
+                    connect_slide_entries.remove(connect)
+
+                moment_converted = ma2tick_to_judgetick(tick)
+                shoot_converted = ma2tick_to_judgetick(tick + wait)
+                wait_converted = shoot_converted - moment_converted
+                duration_converted = ma2tick_to_judgetick(end_tick) - shoot_converted
+                postfix = "b" if br else ""
+                time_signature = "[" + str(wait) + "#" + str(end_tick - tick - wait) + "]"
+                cursor = (lineno, tick, shape[0][0] + "".join(s[1:] for s in shapes) + time_signature + postfix)
+
+                each_list.append(SimaiSlideChain(cursor, moment_converted, shapes, wait_converted,
+                                                 total_duration=duration_converted))
+
+        result.extend(SimaiParser.workup_each(each_list))
+        SimaiParser.post_parse_workup(result)
+        result.sort(key=lambda x: x.moment)
+        return result
+
+
+if __name__ == "__main__":
+    from slides import init as init_slides
+    init_slides()
+    with open(r"test.ma2") as f:
+        ma2text = f.read()
+    print(len(MA2Parser.parse_ma2_chart(ma2text)))
 
