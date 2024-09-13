@@ -1,6 +1,6 @@
 from typing import Sequence
 
-from core import Pad, JUDGE_TPS, TOUCH_ON_SLIDE_THRESHOLD, TAP_ON_SLIDE_THRESHOLD, REPORT_WRITER, \
+from core import FAKE_HOLD_DURATION, Pad, JUDGE_TPS, TOUCH_ON_SLIDE_THRESHOLD, TAP_ON_SLIDE_THRESHOLD, REPORT_WRITER, \
     HAND_RADIUS_NORMAL, HAND_RADIUS_WIFI, EXTRA_PADDOWN_DELAY, DISTANCE_MERGE_SLIDE, DELTA_TANGENT_MERGE_SLIDE
 from slides import SlideInfo
 from simai import SimaiTap, SimaiHold, SimaiTouch, SimaiTouchHold, SimaiTouchGroup, \
@@ -254,6 +254,8 @@ class SimaiParser:
                 except ValueError as e:
                     REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", note_str, e)
                     return []
+                if duration <= FAKE_HOLD_DURATION:
+                    return [SimaiTouch(cursor, now, pad_str)]
                 return [SimaiTouchHold(cursor, now, pad_str, duration)]
 
             # touch or fake touchhold
@@ -300,6 +302,8 @@ class SimaiParser:
             except ValueError as e:
                 REPORT_WRITER.writeln("L:", cursor[0], "C:", cursor[1], "Invalid note:", note_str, e)
                 return []
+            if duration <= FAKE_HOLD_DURATION:
+                return [SimaiTap(cursor, now, pos)]
             return [SimaiHold(cursor, now, pos, duration)]
 
         # tap or fake hold
@@ -371,7 +375,8 @@ class SimaiParser:
             length = len(line)
             line_iter = enumerate(line, start=1)
             for column, ch in line_iter:
-                if ch == "|" and (column + 1) < length and line[column + 1] == "|":
+                # 注意 column 从 1 开始，ch 应为 line[column - 1]
+                if ch == "|" and column < length and line[column] == "|":
                     # comments
                     break
 
@@ -408,7 +413,8 @@ class SimaiParser:
                         REPORT_WRITER.writeln("L:", lineno, "C:", column, "Invalid beats:", temp)
                     continue
 
-                if ch == "H" and (column + 2) < length and line[column + 1] == "S" and line[column + 2] == "*":
+                # 注意 column 从 1 开始，ch 应为 line[column - 1]
+                if ch == "H" and (column + 1) < length and line[column] == "S" and line[column + 1] == "*":
                     # HS definition, ignore
                     have_note = False
                     current_note = ""
@@ -456,6 +462,14 @@ class SimaiParser:
                     if isinstance(note2, SimaiSlideChain | SimaiWifi):
                         if note.idx == note2.start and abs(note.moment - note2.shoot_moment) < TAP_ON_SLIDE_THRESHOLD:
                             note.set_slide_head(True)
+                            break
+
+            if isinstance(note, SimaiHold):
+                # check for tap-slide pair (tap occurs when slide shoots)
+                for note2 in chart:
+                    if isinstance(note2, SimaiSlideChain | SimaiWifi):
+                        if note.idx == note2.start and abs(note.end_moment - note2.shoot_moment) < TAP_ON_SLIDE_THRESHOLD:
+                            note.set_tail_on_slide_head(True)
                             break
 
             # check if touch is on a slide
@@ -532,6 +546,20 @@ class SimaiParser:
                             if abs(pos - pos2) < DISTANCE_MERGE_SLIDE and abs(tan - tan2) < DELTA_TANGENT_MERGE_SLIDE:
                                 note.set_after_slide(True)
 
+        # 计算combo数
+        def _k(nt):
+            if isinstance(nt, SimaiSlideChain | SimaiWifi):
+                return nt.critical_moment
+            elif isinstance(nt, SimaiHold | SimaiTouchHold):
+                return nt.end_moment
+            else:
+                return nt.moment
+
+        sorted_by_critical = sorted(chart, key=_k)
+        for index, note in enumerate(sorted_by_critical, start=1):
+            note.set_combo(index)
+
+
     @classmethod
     def _check_touch_on_slide(cls, touch: SimaiTouch, slide: SimaiSlideChain) -> bool:
         # check first pad (something like tap-slide pair)
@@ -584,7 +612,14 @@ class NoteActionConverter:
                 result.append(ActionPress(note, note.moment, 0, note.center, note.radius))
                 continue
 
-            elif isinstance(note, SimaiHold | SimaiTouchHold):
+            elif isinstance(note, SimaiHold):
+                if note.tail_on_slide_head:
+                    result.append(ActionPress(note, note.moment, note.duration, note.pad.vec, HAND_RADIUS_NORMAL, True))
+                else:
+                    result.append(ActionPress(note, note.moment, note.duration, note.pad.vec, HAND_RADIUS_NORMAL))
+                continue
+
+            elif isinstance(note, SimaiTouchHold):
                 result.append(ActionPress(note, note.moment, note.duration, note.pad.vec, HAND_RADIUS_NORMAL))
                 continue
 
@@ -812,10 +847,13 @@ class MA2Parser:
                 idx = entry[3]
                 duration = entry[4]
                 postfix = entry[5]
-                moment_converted = ma2tick_to_judgetick(tick)
-                duration_converted = ma2tick_to_judgetick(tick + duration) - moment_converted
                 cursor = (lineno, tick, str(idx) + postfix + "h[" + str(duration) + "]")
-                each_list.append(SimaiHold(cursor, moment_converted, idx, duration_converted))
+                moment_converted = ma2tick_to_judgetick(tick)
+                if duration == 0:
+                    each_list.append(SimaiTap(cursor, moment_converted, idx))
+                else:
+                    duration_converted = ma2tick_to_judgetick(tick + duration) - moment_converted
+                    each_list.append(SimaiHold(cursor, moment_converted, idx, duration_converted))
 
             elif note_type == "THO":
                 pad = entry[3]

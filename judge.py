@@ -76,18 +76,6 @@ class StaticMuriChecker:
         muri_records = []
         flatten = list(cls._flatten_touch_group(note_sequence))
 
-        def _(_):
-            if getattr(_, "critical_moment", None):
-                return _.critical_moment
-            elif getattr(_, "end_moment", None):
-                return _.end_moment
-            else:
-                return _.moment
-
-        sorted_sequence = sorted(flatten,
-                                 key=_)
-        for index, it in enumerate(sorted_sequence, start=1):
-            it.combo = index
         # 拆分note序列
         slides = []
         wifis = []
