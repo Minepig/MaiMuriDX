@@ -81,7 +81,7 @@ Next-generation muri detector for simai, supports DX charts.
 {
     "hand_radius_max": 180,
     "hand_radius_wifi": 100,
-    "hand_radius_normal": 40,
+    "hand_radius_normal": 60,
     "distance_merge_slide": 20,
     "delta_tangent_merge_slide": 3,
     "tap_on_slide_threshold": 0.3333,
