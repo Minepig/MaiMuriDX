@@ -45,7 +45,7 @@ SLIDE_DELTA_SHIFT = JUDGE_TPF * 3   # SEGA似乎把Slide判定往前移了3帧
 # 6 frames (100ms) here, but maybe it's 3 frames?
 # True, it's 3 frames.
 # Update: well actually there is a 50 ms input delay, so 6 frames, again.
-# but we have a release delay of 1.33 frame, so I make this argument 5 frames, lol.
+# but we have a release delay of 1 frame, so I make this argument 5 frames, lol.
 SLIDE_LEADING = JUDGE_TPF * 5   # 星星入判
 
 # Rendering definitions
@@ -60,7 +60,7 @@ if not config_path.exists():
         obj = {
             "hand_radius_max": 180,
             "hand_radius_wifi": 100,
-            "hand_radius_normal": 40,
+            "hand_radius_normal": 60,
             "distance_merge_slide": 20,
             "delta_tangent_merge_slide": 3,
             "tap_on_slide_threshold": round(1/JUDGE_TPF, 4),
@@ -99,7 +99,7 @@ EXTRA_PADDOWN_DELAY = JUDGE_TPF * obj["extra_paddown_delay"]
 
 # when a note finished, the hand will release after several ticks
 # 松手延迟，即任何操作在结束后延迟多久才松开判定区
-# 4 ticks or 1.333 frame in 60 fps (48th note in bpm > 225 is treated as each)
+# 3 ticks or 1 frame in 60 fps (48th note in bpm > 225 is treated as each)
 RELEASE_DELAY = JUDGE_TPF * obj["release_delay"]
 
 # 指定Wifi星星是否需要C区抬手判

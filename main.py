@@ -139,10 +139,11 @@ class Game:
             elif event.type == pg.KEYDOWN:
                 if event.key == pg.K_SPACE:
                     self.pause = not self.pause
-                    if self.pause:
-                        pg.mixer.music.pause()
-                    else:
-                        pg.mixer.music.unpause()
+                    if HAS_AUDIO:
+                        if self.pause:
+                            pg.mixer.music.pause()
+                        else:
+                            pg.mixer.music.unpause()
 
     def load_chart(self, chart: list[SimaiNote]):
         actions = NoteActionConverter.generate_action(chart)
@@ -195,7 +196,7 @@ class Game:
             elapsed_ticks = (timer_new - self.timer_ms) * JUDGE_TPS / 1000
             # print(elapsed_ticks)
             self.timer_ms = timer_new
-            if self.judge_manager.timer < 0 and self.judge_manager.timer + elapsed_ticks > 0:
+            if HAS_AUDIO and self.judge_manager.timer < 0 and self.judge_manager.timer + elapsed_ticks > 0:
                 pg.mixer.music.play()
                 pass
 
@@ -250,18 +251,21 @@ class Game:
 if __name__ == "__main__":
     MA2_MODE = False
     print("输入谱面文件路径: ")
-    path_to_chart = pathlib.Path(input())
+    path_to_chart = pathlib.Path(input().strip().strip("'\""))
     if path_to_chart.is_dir():
         path_to_chart = path_to_chart / "maidata.txt"
     if path_to_chart.suffix == ".ma2":
         MA2_MODE = True
         print("输入乐曲文件路径: ")
-        path_to_track = pathlib.Path(input())
+        path_to_track = pathlib.Path(input().strip().strip("'\""))
         with path_to_chart.open("r", encoding="utf-8") as f:
             ma2text = f.read()
         chart = MA2Parser.parse_ma2_chart(ma2text)
     else:
         path_to_track = path_to_chart.parent / "track.mp3"
+        if not path_to_track.is_file():
+            print("输入乐曲文件路径: ")
+            path_to_track = pathlib.Path(input().strip().strip("'\""))
         first = 0
         charts = {}
         with path_to_chart.open("r", encoding="utf-8") as f:
@@ -280,8 +284,13 @@ if __name__ == "__main__":
         chart = SimaiParser.parse_simai_chart(chart_str, first)
         REPORT_WRITER.writeln_no_stdout("谱面文件：%s\n难度：%s\n" % (path_to_chart, d))
 
-    pg.mixer.music.load(path_to_track)
-    pg.mixer.music.set_volume(0.3)
+    HAS_AUDIO = True
+    if path_to_track.is_file():
+        pg.mixer.music.load(path_to_track)
+        pg.mixer.music.set_volume(0.3)
+    else:
+        print("乐曲文件不存在，将静音播放。")
+        HAS_AUDIO = False
 
     flag = bool(input("是否关闭渲染？(不输入任何内容即为否) "))
 
