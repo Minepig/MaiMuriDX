@@ -370,9 +370,11 @@ class SimaiSlideChain(SimaiNote):
             # 还没开始判定
             return
 
+        # A regional UP cannot finish one area and activate another in this tick.
+        consumed_pad_releases: set[Pad] = set()
         while self.cur_area_idx < self.total_area_num:
             # 下面这个函数会进行一轮判定区检查，如果有变化的话返回值就是True
-            if not self._progress_slide_once(now, pad_states, pad_up_this_tick):
+            if not self._progress_slide_once(now, pad_states, pad_up_this_tick, consumed_pad_releases):
                 break
 
         if self.cur_area_idx >= self.total_area_num:
@@ -424,7 +426,7 @@ class SimaiSlideChain(SimaiNote):
         #      so A2/B2, A4/B4 are both skippable
 
     def _progress_slide_once(self, now: float, pad_states: "dict[Pad, Action | None]",
-                             pad_up_this_tick: "dict[Pad, Action | None]") -> bool:
+                             pad_up_this_tick: "dict[Pad, Action | None]", consumed_pad_releases: set[Pad]) -> bool:
         # 进行一轮判定区检查
         # pad_states 记录的是一个pad有没有被按下，如果有value就是导致按下的action，否则value就是None
         # pad_up_this_tick 记录的是一个pad是不是这个tick内刚刚被松开，value的含义同上
@@ -447,6 +449,7 @@ class SimaiSlideChain(SimaiNote):
         else:
             # check pad up
             if pad_states[self.pressing] is None:
+                consumed_pad_releases.add(self.pressing)
                 self.pressing = None
                 self.cur_area_idx += 1
                 return True
@@ -455,7 +458,10 @@ class SimaiSlideChain(SimaiNote):
             # try to skip current area
             for pad in self.judge_sequence[self.cur_area_idx + 1]:
                 # if a pad has just been release in this tick, treat it as still being pressed
-                if pad_states[pad] is not None or pad_up_this_tick[pad] is not None:
+                if pad_states[pad] is not None or (
+                        pad not in consumed_pad_releases and pad_up_this_tick[pad] is not None):
+                    if pad_states[pad] is None:
+                        consumed_pad_releases.add(pad)
                     self.pressing = pad
                     self.cur_area_idx += 1
                     self.area_judge_actions[self.cur_area_idx] = ((pad_states[pad] or pad_up_this_tick[pad]), now)
@@ -528,8 +534,10 @@ class SimaiWifi(SimaiNote):
             return
 
         for lane in range(3):
+            # Each wifi lane is an independent judge queue.
+            consumed_pad_releases: set[Pad] = set()
             while self.cur_area_idxes[lane] < self.total_area_num:
-                if not self._progress_lane_once(now, lane, pad_states, pad_up_this_tick):
+                if not self._progress_lane_once(now, lane, pad_states, pad_up_this_tick, consumed_pad_releases):
                     break
         # 模拟旧框的C区抬手判
         if not self.pad_c_passed and self.cur_area_idxes[1] > 0 and pad_up_this_tick[Pad.C] is not None:
@@ -548,7 +556,7 @@ class SimaiWifi(SimaiNote):
             self.judge_moment = now
 
     def _progress_lane_once(self, now: float, lane: int, pad_states: "dict[Pad, Action | None]",
-                            pad_up_this_tick: "dict[Pad, Action | None]") -> bool:
+                            pad_up_this_tick: "dict[Pad, Action | None]", consumed_pad_releases: set[Pad]) -> bool:
         # 对某一轨进行一次判定区检查，基本上和slidechain的逻辑是一样的
         if self.pressing[lane] is None:
             for pad in self.info.tri_judge_sequence[lane][self.cur_area_idxes[lane]]:
@@ -563,13 +571,17 @@ class SimaiWifi(SimaiNote):
 
         else:
             if pad_states[self.pressing[lane]] is None:
+                consumed_pad_releases.add(self.pressing[lane])
                 self.pressing[lane] = None
                 self.cur_area_idxes[lane] += 1
                 return True
 
         if self.cur_area_idxes[lane] < self.total_area_num - 1:
             for pad in self.info.tri_judge_sequence[lane][self.cur_area_idxes[lane] + 1]:
-                if pad_states[pad] is not None or pad_up_this_tick[pad] is not None:
+                if pad_states[pad] is not None or (
+                        pad not in consumed_pad_releases and pad_up_this_tick[pad] is not None):
+                    if pad_states[pad] is None:
+                        consumed_pad_releases.add(pad)
                     self.pressing[lane] = pad
                     self.cur_area_idxes[lane] += 1
                     self.area_judge_actions[lane][self.cur_area_idxes[lane]] = (
